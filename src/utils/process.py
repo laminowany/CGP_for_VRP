@@ -16,14 +16,14 @@ def get_options(args=None):
 
     # # Model
     # parser.add_argument('--model', default='attention', help="Model, 'attention' (default) or 'pointer'")
-    # parser.add_argument('--embedding_dim', type=int, default=128, help='Dimension of input embedding')
-    # parser.add_argument('--hidden_dim', type=int, default=128, help='Dimension of hidden layers in Enc/Dec')
-    # parser.add_argument('--n_encode_layers', type=int, default=3,
-    #                     help='Number of layers in the encoder/critic network')
-    # parser.add_argument('--tanh_clipping', type=float, default=10.,
-    #                     help='Clip the parameters to within +- this value using tanh. '
-    #                          'Set to 0 to not perform any clipping.')
-    # parser.add_argument('--normalization', default='batch', help="Normalization type, 'batch' (default) or 'instance'")
+    parser.add_argument('--embedding_dim', type=int, default=128, help='Dimension of input embedding')
+    parser.add_argument('--hidden_dim', type=int, default=128, help='Dimension of hidden layers in Enc/Dec')
+    parser.add_argument('--n_encode_layers', type=int, default=3,
+                        help='Number of layers in the encoder/critic network')
+    parser.add_argument('--tanh_clipping', type=float, default=10.,
+                        help='Clip the parameters to within +- this value using tanh. '
+                             'Set to 0 to not perform any clipping.')
+    parser.add_argument('--normalization', default='batch', help="Normalization type, 'batch' (default) or 'instance'")
 
     # # Training
     # parser.add_argument('--lr_model', type=float, default=1e-4, help="Set the learning rate for the actor network")
@@ -46,11 +46,11 @@ def get_options(args=None):
     #                          'used for warmup phase), 0 otherwise. Can only be used with rollout baseline.')
     # parser.add_argument('--eval_batch_size', type=int, default=1024,
     #                     help="Batch size to use during (baseline) evaluation")
-    # parser.add_argument('--checkpoint_encoder', action='store_true',
-    #                     help='Set to decrease memory usage by checkpointing encoder')
-    # parser.add_argument('--shrink_size', type=int, default=None,
-    #                     help='Shrink the batch size if at least this many instances in the batch are finished'
-    #                          ' to save memory (default None means no shrinking)')
+    parser.add_argument('--checkpoint_encoder', action='store_true',
+                        help='Set to decrease memory usage by checkpointing encoder')
+    parser.add_argument('--shrink_size', type=int, default=None,
+                        help='Shrink the batch size if at least this many instances in the batch are finished'
+                             ' to save memory (default None means no shrinking)')
     # parser.add_argument('--data_distribution', type=str, default=None,
     #                     help='Data distribution to use during training, defaults and options depend on problem.')
 
