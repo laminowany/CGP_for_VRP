@@ -1,6 +1,11 @@
 import torch
 import torch.nn.functional as F
 
+def move_to(var, device):
+    if isinstance(var, dict):
+        return {k: move_to(v, device) for k, v in var.items()}
+    return var.to(device)
+
 def do_batch_rep(v, n):
     if isinstance(v, dict):
         return {k: do_batch_rep(v_, n) for k, v_ in v.items()}
@@ -42,3 +47,63 @@ def sample_many(inner_func, get_cost_func, input, batch_rep=1, iter_rep=1):
     minpis = pis[torch.arange(pis.size(0), out=argmincosts.new()), argmincosts]
 
     return minpis, mincosts
+
+def _mask_long2byte(mask, n=None):
+    if n is None:
+        n = 8 * mask.size(-1)
+    return (mask[..., None] >> (torch.arange(8, out=mask.new()) * 8))[..., :n].to(torch.uint8).view(*mask.size()[:-1], -1)[..., :n]
+
+
+def _mask_byte2bool(mask, n=None):
+    if n is None:
+        n = 8 * mask.size(-1)
+    return (mask[..., None] & (mask.new_ones(8) << torch.arange(8, out=mask.new()) * 1)).view(*mask.size()[:-1], -1)[..., :n] > 0
+
+
+def mask_long2bool(mask, n=None):
+    assert mask.dtype == torch.int64
+    return _mask_byte2bool(_mask_long2byte(mask), n=n)
+
+def mask_long_scatter(mask, values, check_unset=True):
+    """
+    Sets values in mask in dimension -1 with arbitrary batch dimensions
+    If values contains -1, nothing is set
+    Note: does not work for setting multiple values at once (like normal scatter)
+    """
+    assert mask.size()[:-1] == values.size()
+    rng = torch.arange(mask.size(-1), out=mask.new())
+    values_ = values[..., None]  # Need to broadcast up do mask dim
+    # This indicates in which value of the mask a bit should be set
+    where = (values_ >= (rng * 64)) & (values_ < ((rng + 1) * 64))
+    # Optional: check that bit is not already set
+    assert not (check_unset and ((mask & (where.long() << (values_ % 64))) > 0).any())
+    # Set bit by shifting a 1 to the correct position
+    # (% not strictly necessary as bitshift is cyclic)
+    # since where is 0 if no value needs to be set, the bitshift has no effect
+    return mask | (where.long() << (values_ % 64))
+
+
+def log_values(cost, grad_norms, epoch, batch_id, step,
+               log_likelihood, reinforce_loss, bl_loss, tb_logger, opts):
+    avg_cost = cost.mean().item()
+    grad_norms, grad_norms_clipped = grad_norms
+
+    # Log values to screen
+    print('epoch: {}, train_batch_id: {}, avg_cost: {}'.format(epoch, batch_id, avg_cost))
+
+    print('grad_norm: {}, clipped: {}'.format(grad_norms[0], grad_norms_clipped[0]))
+
+    # Log values to tensorboard
+    if not opts.no_tensorboard:
+        tb_logger.log_value('avg_cost', avg_cost, step)
+
+        tb_logger.log_value('actor_loss', reinforce_loss.item(), step)
+        tb_logger.log_value('nll', -log_likelihood.mean().item(), step)
+
+        tb_logger.log_value('grad_norm', grad_norms[0], step)
+        tb_logger.log_value('grad_norm_clipped', grad_norms_clipped[0], step)
+
+        if opts.baseline == 'critic':
+            tb_logger.log_value('critic_loss', bl_loss.item(), step)
+            tb_logger.log_value('critic_grad_norm', grad_norms[1], step)
+            tb_logger.log_value('critic_grad_norm_clipped', grad_norms_clipped[1], step)

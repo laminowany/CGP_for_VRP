@@ -5,6 +5,8 @@ from typing import NamedTuple
 from utils.beam_search import CachedLookup
 from torch.utils.checkpoint import checkpoint
 from utils.misc import sample_many
+from learning.encoders.graph_encoder import GraphAttentionEncoder
+from learning.problem_vrp import CVRP
 
 class AttentionModelFixed(NamedTuple):
     """
@@ -67,12 +69,13 @@ class AttentionModel(nn.Module):
         self.init_embed = nn.Linear(node_dim, embedding_dim)
 
         # TODO ENKODER
-        # self.embedder = GraphAttentionEncoder(
-        #     n_heads=n_heads,
-        #     embed_dim=embedding_dim,
-        #     n_layers=self.n_encode_layers,
-        #     normalization=normalization
-        # )
+        # self.embedder = TrivialEncoder(embed_dim=embedding_dim)
+        self.embedder = GraphAttentionEncoder(
+            n_heads=n_heads,
+            embed_dim=embedding_dim,
+            n_layers=self.n_encode_layers,
+            normalization=normalization
+        )
 
         # For each node we compute (glimpse key, glimpse value, logit key) so 3 * embedding_dim
         self.project_node_embeddings = nn.Linear(embedding_dim, 3 * embedding_dim, bias=False)
@@ -103,7 +106,7 @@ class AttentionModel(nn.Module):
 
         _log_p, pi = self._inner(input, embeddings)
 
-        cost, mask = self.problem.get_costs(input, pi)
+        cost, mask = CVRP.get_costs(input, pi)
         # Log likelyhood is calculated within the model since returning it per action does not work well with
         # DataParallel since sequences can be of different lengths
         ll = self._calc_log_likelihood(_log_p, pi, mask)
@@ -113,43 +116,13 @@ class AttentionModel(nn.Module):
         return cost, ll
 
     def beam_search(self, *args, **kwargs):
-        return self.problem.beam_search(*args, **kwargs, model=self)
+        return CVRP.beam_search(*args, **kwargs, model=self)
 
     def precompute_fixed(self, input):
         embeddings, _ = self.embedder(self._init_embed(input))
         # Use a CachedLookup such that if we repeatedly index this object with the same index we only need to do
         # the lookup once... this is the case if all elements in the batch have maximum batch size
         return CachedLookup(self._precompute(embeddings))
-
-    def propose_expansions(self, beam, fixed, expand_size=None, normalize=False, max_calc_batch_size=4096):
-        # First dim = batch_size * cur_beam_size
-        log_p_topk, ind_topk = compute_in_batches(
-            lambda b: self._get_log_p_topk(fixed[b.ids], b.state, k=expand_size, normalize=normalize),
-            max_calc_batch_size, beam, n=beam.size()
-        )
-
-        assert log_p_topk.size(1) == 1, "Can only have single step"
-        # This will broadcast, calculate log_p (score) of expansions
-        score_expand = beam.score[:, None] + log_p_topk[:, 0, :]
-
-        # We flatten the action as we need to filter and this cannot be done in 2d
-        flat_action = ind_topk.view(-1)
-        flat_score = score_expand.view(-1)
-        flat_feas = flat_score > -1e10  # != -math.inf triggers
-
-        # Parent is row idx of ind_topk, can be found by enumerating elements and dividing by number of columns
-        flat_parent = torch.arange(flat_action.size(-1), out=flat_action.new()) // ind_topk.size(-1)
-
-        # Filter infeasible
-        feas_ind_2d = torch.nonzero(flat_feas)
-
-        if len(feas_ind_2d) == 0:
-            # Too bad, no feasible expansions at all :(
-            return None, None, None
-
-        feas_ind = feas_ind_2d[:, 0]
-
-        return flat_parent[feas_ind], flat_action[feas_ind], flat_score[feas_ind]
 
     def _calc_log_likelihood(self, _log_p, a, mask):
 
@@ -183,7 +156,7 @@ class AttentionModel(nn.Module):
         outputs = []
         sequences = []
 
-        state = self.problem.make_state(input)
+        state = CVRP.make_state(input)
 
         # Compute keys, values for the glimpse and keys for the logits once as they can be reused in every step
         fixed = self._precompute(embeddings)
@@ -240,7 +213,7 @@ class AttentionModel(nn.Module):
         # Making a tuple will not work with the problem.get_cost function
         return sample_many(
             lambda input: self._inner(*input),  # Need to unpack tuple into arguments
-            lambda input, pi: self.problem.get_costs(input[0], pi),  # Don't need embeddings as input to get_costs
+            lambda input, pi: CVRP.get_costs(input[0], pi),  # Don't need embeddings as input to get_costs
             (input, self.embedder(self._init_embed(input))[0]),  # Pack input with embeddings (additional input)
             batch_rep, iter_rep
         )
@@ -342,7 +315,7 @@ class AttentionModel(nn.Module):
                 (
                     embeddings[:, 0:1, :].expand(batch_size, num_steps, embeddings.size(-1)),
                     # used capacity is 0 after visiting depot
-                    self.problem.VEHICLE_CAPACITY - torch.zeros_like(state.used_capacity[:, :, None])
+                    CVRP.VEHICLE_CAPACITY - torch.zeros_like(state.used_capacity[:, :, None])
                 ),
                 -1
             )
@@ -356,7 +329,7 @@ class AttentionModel(nn.Module):
                             .view(batch_size, num_steps, 1)
                             .expand(batch_size, num_steps, embeddings.size(-1))
                     ).view(batch_size, num_steps, embeddings.size(-1)),
-                    self.problem.VEHICLE_CAPACITY - state.used_capacity[:, :, None]
+                    CVRP.VEHICLE_CAPACITY - state.used_capacity[:, :, None]
                 ),
                 -1
             )

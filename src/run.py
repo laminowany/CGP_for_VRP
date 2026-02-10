@@ -2,16 +2,20 @@ import os
 import json
 import torch
 import torch.optim as optim
+import pprint as pp
 
 from utils.process import get_options
 from tensorboard_logger import Logger as TbLogger
-from learning.base_net import AttentionModel
+from learning.attention_model import AttentionModel
 from learning.reinforce_baselines import ExponentialBaseline, RolloutBaseline, NoBaseline, WarmupBaseline
+from learning.problem_vrp import CVRP
+from utils.training import train_epoch
 
 def run(opts):
+    pp.pprint(vars(opts))
+
     torch.manual_seed(opts.seed)
-    tb_logger = TbLogger(os.path.join(opts.log_dir, "VRP_{}".format(opts.problem_size), opts.run_name))
-    
+    tb_logger = TbLogger(os.path.join(opts.log_dir, "VRP_{}".format(opts.graph_size), opts.run_name))
     os.makedirs(opts.save_dir)
     with open(os.path.join(opts.save_dir, "args.json"), 'w') as f:
         json.dump(vars(opts), f, indent=True)
@@ -54,6 +58,21 @@ def run(opts):
     
     # Initialize learning rate scheduler, decay by lr_decay once per epoch!
     lr_scheduler = optim.lr_scheduler.LambdaLR(optimizer, lambda epoch: opts.lr_decay ** epoch)
+    
+    val_dataset = CVRP.make_dataset(size=opts.graph_size, num_samples=opts.val_size)
+    
+    
+    for epoch in range(opts.epoch_start, opts.epoch_start + opts.n_epochs):
+            train_epoch(
+                model,
+                optimizer,
+                baseline,
+                lr_scheduler,
+                epoch,
+                val_dataset,
+                tb_logger,
+                opts
+            )
 
 
 if __name__ == "__main__":
