@@ -169,7 +169,7 @@ class MultiHeadAttentionLayer(nn.Sequential):
                     nn.Linear(embed_dim, feed_forward_hidden),
                     nn.ReLU(),
                     nn.Linear(feed_forward_hidden, embed_dim)
-                ) if feed_forward_hidden > 0 else nn.Linear(embed_dim, embed_dim)
+                )
             ),
             Normalization(embed_dim, normalization)
         )

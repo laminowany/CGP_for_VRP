@@ -12,14 +12,14 @@ from learning.problem_vrp import CVRP
 from utils.training import train_epoch
 
 def run(opts):
-    pp.pprint(vars(opts))
-
+    #pp.pprint(vars(opts))
     torch.manual_seed(opts.seed)
     tb_logger = TbLogger(os.path.join(opts.log_dir, "VRP_{}".format(opts.graph_size), opts.run_name))
     os.makedirs(opts.save_dir)
     with open(os.path.join(opts.save_dir, "args.json"), 'w') as f:
         json.dump(vars(opts), f, indent=True)
     opts.device = torch.device("cuda:0" if opts.use_cuda else "cpu")
+   
 
 
     model = AttentionModel(

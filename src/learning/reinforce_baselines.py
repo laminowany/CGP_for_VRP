@@ -6,7 +6,7 @@ from scipy.stats import ttest_rel
 from torch.utils.data import DataLoader
 from torch.nn import DataParallel
 from tqdm import tqdm
-
+from learning.problem_vrp import CVRP
 
 def move_to(var, device):
     if isinstance(var, dict):
@@ -99,7 +99,7 @@ class WarmupBaseline(Baseline):
         self.baseline.epoch_callback(model, epoch)
         if epoch < self.n_epochs:
             self.alpha = (epoch + 1) / float(self.n_epochs)
-            print("Set warmup alpha = {}".format(self.alpha))
+            #print("Set warmup alpha = {}".format(self.alpha))
 
     def state_dict(self):
         # Checkpointing within warmup stage makes no sense, only save inner baseline
@@ -194,17 +194,17 @@ class RolloutBaseline(Baseline):
                 dataset = None
 
         if dataset is None:
-            self.dataset = self.problem.make_dataset(
-                size=self.opts.graph_size, num_samples=self.opts.val_size, distribution=self.opts.data_distribution)
+            self.dataset = CVRP.make_dataset(
+                size=self.opts.graph_size, num_samples=self.opts.val_size)
         else:
             self.dataset = dataset
-        print("Evaluating baseline model on evaluation dataset")
+        #print("Evaluating baseline model on evaluation dataset")
         self.bl_vals = rollout(self.model, self.dataset, self.opts).cpu().numpy()
         self.mean = self.bl_vals.mean()
         self.epoch = epoch
 
     def wrap_dataset(self, dataset):
-        print("Evaluating baseline on dataset...")
+        #print("Evaluating baseline on dataset...")
         # Need to convert baseline to 2D to prevent converting to double, see
         # https://discuss.pytorch.org/t/dataloader-gives-double-instead-of-float/717/3
         return BaselineDataset(dataset, rollout(self.model, dataset, self.opts).view(-1, 1))
@@ -226,22 +226,22 @@ class RolloutBaseline(Baseline):
         :param model: The model to challenge the baseline by
         :param epoch: The current epoch
         """
-        print("Evaluating candidate model on evaluation dataset")
+        #print("Evaluating candidate model on evaluation dataset")
         candidate_vals = rollout(model, self.dataset, self.opts).cpu().numpy()
 
         candidate_mean = candidate_vals.mean()
 
-        print("Epoch {} candidate mean {}, baseline epoch {} mean {}, difference {}".format(
-            epoch, candidate_mean, self.epoch, self.mean, candidate_mean - self.mean))
+        # print("Epoch {} candidate mean {}, baseline epoch {} mean {}, difference {}".format(
+        #     epoch, candidate_mean, self.epoch, self.mean, candidate_mean - self.mean))
         if candidate_mean - self.mean < 0:
             # Calc p value
             t, p = ttest_rel(candidate_vals, self.bl_vals)
 
             p_val = p / 2  # one-sided
             assert t < 0, "T-statistic should be negative"
-            print("p-value: {}".format(p_val))
+            #print("p-value: {}".format(p_val))
             if p_val < self.opts.bl_alpha:
-                print('Update baseline')
+                #print('Update baseline')
                 self._update_model(model, epoch)
 
     def state_dict(self):
