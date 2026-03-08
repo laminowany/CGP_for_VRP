@@ -75,6 +75,7 @@ def get_options(args=None):
     opts.n_epochs = 10
     opts.baseline = 'rollout'
     opts.no_progress_bar = True
+    opts.n_heads = 8
 
     opts.use_cuda = torch.cuda.is_available() and not opts.no_cuda
     opts.run_name = "{}_{}".format(opts.run_name, time.strftime("%Y%m%dT%H%M%S"))

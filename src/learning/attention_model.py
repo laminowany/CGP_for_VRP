@@ -34,6 +34,7 @@ class AttentionModel(nn.Module):
     def __init__(self,
                  embedding_dim,
                  hidden_dim,
+                 encoder,
                  n_encode_layers=2,
                  tanh_clipping=10.,
                  mask_inner=True,
@@ -46,6 +47,7 @@ class AttentionModel(nn.Module):
 
         self.embedding_dim = embedding_dim
         self.hidden_dim = hidden_dim
+        self.embedder  = encoder
         self.n_encode_layers = n_encode_layers
         self.decode_type = None
         self.temp = 1.0
@@ -70,12 +72,12 @@ class AttentionModel(nn.Module):
 
         # TODO ENKODER
         # self.embedder = TrivialEncoder(embed_dim=embedding_dim)
-        self.embedder = GraphAttentionEncoder(
-            n_heads=n_heads,
-            embed_dim=embedding_dim,
-            n_layers=self.n_encode_layers,
-            normalization=normalization
-        )
+        # self.embedder = GraphAttentionEncoder(
+        #     n_heads=n_heads,
+        #     embed_dim=embedding_dim,
+        #     n_layers=self.n_encode_layers,
+        #     normalization=normalization
+        # )
 
         # For each node we compute (glimpse key, glimpse value, logit key) so 3 * embedding_dim
         self.project_node_embeddings = nn.Linear(embedding_dim, 3 * embedding_dim, bias=False)

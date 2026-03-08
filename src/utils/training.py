@@ -115,6 +115,7 @@ def train_epoch(model, optimizer, baseline, lr_scheduler, epoch, val_dataset, tb
 
     # lr_scheduler should be called at end of epoch
     lr_scheduler.step()
+    return avg_reward
 
 
 
