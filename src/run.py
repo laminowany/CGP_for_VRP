@@ -17,7 +17,8 @@ from utils.training import train_epoch
 def calculate_score(opts, tb_logger, genome):
 
     #encoder = GenomeEncoder(opts.embedding_dim, [(1, -1), (2, -1)])
-    encoder = GenomeEncoder(opts.embedding_dim, [(2, -1), (1, -1), (3, -1), (1, -1)]*3)
+    #encoder = GenomeEncoder(opts.embedding_dim, [(2,), (1,), (3,), (1,)]*3)
+    encoder = GenomeEncoder(opts.embedding_dim, [(4,), (5, -2), (1,), (6, 1), (7,), (6, -1), (5, -4), (1,)]*3)
     # encoder  = GraphAttentionEncoder(, 
     #     n_heads = opts.n_heads,
     #     embed_dim = opts.embedding_dim,
