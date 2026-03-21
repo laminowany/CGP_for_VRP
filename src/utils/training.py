@@ -14,8 +14,8 @@ def validate(model, dataset, opts):
     #print('Validating...')
     cost = rollout(model, dataset, opts)
     avg_cost = cost.mean()
-    print('Validation overall avg_cost: {} +- {}'.format(
-        avg_cost, torch.std(cost) / math.sqrt(len(cost))))
+    # print('Validation overall avg_cost: {} +- {}'.format(
+    #     avg_cost, torch.std(cost) / math.sqrt(len(cost))))
 
     return avg_cost
 
@@ -92,19 +92,19 @@ def train_epoch(model, optimizer, baseline, lr_scheduler, epoch, val_dataset, tb
     epoch_duration = time.time() - start_time
     #print("Finished epoch {}, took {} s".format(epoch, time.strftime('%H:%M:%S', time.gmtime(epoch_duration))))
 
-    if epoch == opts.n_epochs - 1:
-        dest =  os.path.join(opts.save_dir, 'epoch-{}.pt'.format(epoch))
-        print(f'Saving model and state... to {dest}')
-        torch.save(
-        {
-            'model': model,
-            'optimizer': optimizer.state_dict(),
-            'rng_state': torch.get_rng_state(),
-            'cuda_rng_state': torch.cuda.get_rng_state_all(),
-            'baseline': baseline.state_dict()
-        },
-        os.path.join(opts.save_dir, 'epoch-{}.pt'.format(epoch))
-    )
+    # if epoch == opts.n_epochs - 1:
+    #     dest =  os.path.join(opts.save_dir, 'epoch-{}.pt'.format(epoch))
+    #     print(f'Saving model and state... to {dest}')
+    #     torch.save(
+    #     {
+    #         'model': model,
+    #         'optimizer': optimizer.state_dict(),
+    #         'rng_state': torch.get_rng_state(),
+    #         'cuda_rng_state': torch.cuda.get_rng_state_all(),
+    #         'baseline': baseline.state_dict()
+    #     },
+    #     os.path.join(opts.save_dir, 'epoch-{}.pt'.format(epoch))
+    # )
 
     avg_reward = validate(model, val_dataset, opts)
 

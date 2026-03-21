@@ -156,12 +156,22 @@ class Add(nn.Module):
         return x + skip
 
 
+
+class Genome():
+    _id_counter = 0 
+
+    def __init__(self, genes):
+        self.id = Genome._id_counter
+        Genome._id_counter += 1
+        self.genes = genes
+        self.score = None
+
 # 1 - normalization 
 # 2 - attention block
 # 3 - feedforward block
 # 4 - multihead attention
 # 5 - add ( X - skip z X kroków wcześniej)
-# 6 - Linear (1 - UP DIMEN, 2 - DOWN DIMEN)
+# 6 - Linear (1 - UP DIMEN, -1 DOWN DIMEN)
 # 7 - RELU
 # genome [(1,2),  (1,3)]
 class GenomeEncoder(nn.Module):
@@ -202,10 +212,13 @@ class GenomeEncoder(nn.Module):
                 layer = Add()
             elif layer_type == 6:
                 scaling = gene[1]
-                if scaling == 1: # scale up
-                    layer = nn.Linear(embed_dim, self.feed_forward_hidden)
-                elif scaling == -1: # scale down
-                    layer = nn.Linear(self.feed_forward_hidden, embed_dim)    
+                layer = nn.Linear(embed_dim, embed_dim)
+                # if scaling == 1: # scale up
+                #     layer = nn.Linear(embed_dim, self.feed_forward_hidden)
+                # elif scaling == 0: # keep dim
+                #     layer = nn.Linear(embed_dim, embed_dim)
+                # elif scaling == -1: # scale down
+                #     layer = nn.Linear(self.feed_forward_hidden, embed_dim)    
             elif layer_type == 7:
                 layer = nn.ReLU()
             self.layers.append(layer)
@@ -238,13 +251,21 @@ class GenomeEncoder(nn.Module):
         return (final_h, graph_embedding)
 
     @staticmethod
-    def spawn_random_genome():
-        mu, sigma = 7, 2  # średnia 7, odchylenie standardowe 2
-        length = int(torch.normal(mean=mu, std=sigma).item())
-        length = max(1, length)  # minimalna długość 1
+    def spawn_random_genome() -> Genome:
+        length = 7 + random.randint(-3, 3)
 
         genome = []
         for i in range(length):
-            layer_type = random.randint(1, 7)
-            
-            
+            genome.append(GenomeEncoder.spawn_genome_sequence(i))
+        return Genome(genome)
+    
+    @staticmethod
+    def spawn_genome_sequence(i) -> Genome:
+        layer_type = random.randint(1, 7)   
+        if layer_type == 5:
+            skip_from = min(i + 1, random.randint(2, 5))
+            return (layer_type, -skip_from)
+        elif layer_type == 6:
+            return (layer_type, 0)
+        else:
+            return (layer_type,)
