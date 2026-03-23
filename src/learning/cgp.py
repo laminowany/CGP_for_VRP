@@ -12,7 +12,6 @@ class SkipConnection(nn.Module):
     def forward(self, input):
         return input + self.module(input)
 
-
 class MultiHeadAttention(nn.Module):
     def __init__(
             self,
@@ -151,11 +150,14 @@ class Add(nn.Module):
     """Simple adding for making skip connection possible"""
     def __init__(self):
         super(Add, self).__init__()
+        self.proj = None
 
     def forward(self, x, skip):
+        # if x.shape[-1] != skip.shape[-1]:
+        #     if self.proj is None:
+        #         self.proj = nn.Linear(skip.shape[-1], x.shape[-1])
+        #     skip = self.proj(skip)
         return x + skip
-
-
 
 class Genome():
     _id_counter = 0 
@@ -165,35 +167,30 @@ class Genome():
         Genome._id_counter += 1
         self.genes = genes
         self.score = None
+    
+    def build_nn(self, opts):
+        return GenomeNN(self.genes, opts)
 
-# 1 - normalization 
-# 2 - attention block
-# 3 - feedforward block
-# 4 - multihead attention
-# 5 - add ( X - skip z X kroków wcześniej)
-# 6 - Linear (1 - UP DIMEN, -1 DOWN DIMEN)
-# 7 - RELU
-# genome [(1,2),  (1,3)]
-class GenomeEncoder(nn.Module):
-    def __init__(self, embed_dim, genome):
+class GenomeNN(nn.Module):
+    def __init__(self, genes, opts):
         super().__init__()
         self.num_heads = 8
         self.feed_forward_hidden = 512
-        self.genome = genome
+        self.genes = genes
         self.layers = nn.ModuleList()
-
-        for gene in self.genome:
+        embed_dim = opts.embedding_dim
+        for gene in self.genes:
             layer_type = gene[0]
             if layer_type == 1:
                 layer = Normalization(embed_dim)
             elif layer_type == 2:
-                layer = SkipConnection(
+                layer = nn.Sequential (SkipConnection(
                     MultiHeadAttention(
                         self.num_heads,
                         input_dim=embed_dim,
                         embed_dim=embed_dim
                     )
-                )
+                ))
             elif layer_type == 3:
                 layer =  SkipConnection(
                     nn.Sequential(
@@ -212,28 +209,21 @@ class GenomeEncoder(nn.Module):
                 layer = Add()
             elif layer_type == 6:
                 scaling = gene[1]
-                layer = nn.Linear(embed_dim, embed_dim)
-                # if scaling == 1: # scale up
-                #     layer = nn.Linear(embed_dim, self.feed_forward_hidden)
-                # elif scaling == 0: # keep dim
-                #     layer = nn.Linear(embed_dim, embed_dim)
-                # elif scaling == -1: # scale down
-                #     layer = nn.Linear(self.feed_forward_hidden, embed_dim)    
+                if scaling == 1: # scale up
+                    layer = nn.Linear(embed_dim, self.feed_forward_hidden)
+                elif scaling == 0: # keep dim
+                    layer = nn.Linear(embed_dim, embed_dim)
+                elif scaling == -1: # scale down
+                    layer = nn.Linear(self.feed_forward_hidden, embed_dim)    
             elif layer_type == 7:
                 layer = nn.ReLU()
             self.layers.append(layer)
-
-    def forward(self, x, mask=None):
-        """
-        x shape:
-        (batch_size, seq_len, embed_dim)
-        """
-
+    
+    def forward(self, x):
         outputs = [x]
-
-        for i, gene in enumerate(self.genome):
+    
+        for i, gene in enumerate(self.genes):
             layer_type = gene[0]
-
             layer = self.layers[i]
             inp = outputs[-1]
 
@@ -243,24 +233,26 @@ class GenomeEncoder(nn.Module):
                 out = layer(inp, outputs[skip_idx])
             else:
                 out = layer(inp)
-
+            
             outputs.append(out)
 
         final_h = outputs[-1]
         graph_embedding = final_h.mean(dim=1)
         return (final_h, graph_embedding)
 
-    @staticmethod
-    def spawn_random_genome() -> Genome:
-        length = 7 + random.randint(-3, 3)
 
+class GenomeFactory:
+    def produce_genome(self, genes):
+        return Genome(genes)
+
+    def get_random_genome(self):
+        length = 7 + random.randint(-3, 3)
         genome = []
         for i in range(length):
-            genome.append(GenomeEncoder.spawn_genome_sequence(i))
+            genome.append(self.spawn_genome_sequence(i))
         return Genome(genome)
     
-    @staticmethod
-    def spawn_genome_sequence(i) -> Genome:
+    def spawn_genome_sequence(self, i) -> Genome:
         layer_type = random.randint(1, 7)   
         if layer_type == 5:
             skip_from = min(i + 1, random.randint(2, 5))
@@ -269,3 +261,14 @@ class GenomeEncoder(nn.Module):
             return (layer_type, 0)
         else:
             return (layer_type,)
+        
+
+        
+# # 1 - normalization 
+# # 2 - attention block
+# # 3 - feedforward block
+# # 4 - multihead attention
+# # 5 - add ( X - skip z X kroków wcześniej)
+# # 6 - Linear (1 - UP DIMEN, -1 DOWN DIMEN)
+# # 7 - RELU
+# # genome [(1,2),  (1,3)]

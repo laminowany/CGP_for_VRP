@@ -104,16 +104,6 @@ class MultiHeadAttention(nn.Module):
             heads.permute(1, 2, 0, 3).contiguous().view(-1, self.n_heads * self.val_dim),
             self.W_out.view(-1, self.embed_dim)
         ).view(batch_size, n_query, self.embed_dim)
-
-        # Alternative:
-        # headst = heads.transpose(0, 1)  # swap the dimensions for batch and heads to align it for the matmul
-        # # proj_h = torch.einsum('bhni,hij->bhnj', headst, self.W_out)
-        # projected_heads = torch.matmul(headst, self.W_out)
-        # out = torch.sum(projected_heads, dim=1)  # sum across heads
-
-        # Or:
-        # out = torch.einsum('hbni,hij->bnj', heads, self.W_out)
-
         return out
 
 class Normalization(nn.Module):
@@ -161,16 +151,16 @@ class MultiHeadAttentionLayer(nn.Sequential):
                     n_heads,
                     input_dim=embed_dim,
                     embed_dim=embed_dim
-                )
+                ),
             ),
             Normalization(embed_dim, normalization),
             SkipConnection(
                 nn.Sequential(
-                    nn.Linear(embed_dim, feed_forward_hidden),
+                   nn.Linear(embed_dim, feed_forward_hidden),
                     nn.ReLU(),
                     nn.Linear(feed_forward_hidden, embed_dim)
-                )
-            ),
+                ),
+             ),
             Normalization(embed_dim, normalization)
         )
 
@@ -181,14 +171,10 @@ class GraphAttentionEncoder(nn.Module):
             n_heads,
             embed_dim,
             n_layers,
-            node_dim=None,
             normalization='batch',
             feed_forward_hidden=512
     ):
         super(GraphAttentionEncoder, self).__init__()
-
-        # To map input to embedding space
-        self.init_embed = nn.Linear(node_dim, embed_dim) if node_dim is not None else None
 
         self.layers = nn.Sequential(*(
             MultiHeadAttentionLayer(n_heads, embed_dim, feed_forward_hidden, normalization)
@@ -196,12 +182,8 @@ class GraphAttentionEncoder(nn.Module):
         ))
 
     def forward(self, x, mask=None):
-
         assert mask is None, "TODO mask not yet supported!"
-
-        # Batch multiply to get initial embeddings of nodes
-        h = self.init_embed(x.view(-1, x.size(-1))).view(*x.size()[:2], -1) if self.init_embed is not None else x
-
+        h = x
         h = self.layers(h)
 
         return (
