@@ -71,17 +71,17 @@ def get_options(args=None):
     # CUSTOM SZENIGANS
     opts.graph_size = 10
     opts.epoch_size = 12800
-    opts.val_size = 1000
     opts.n_epochs = 10
+
     opts.baseline = 'rollout'
     opts.no_progress_bar = True
     opts.n_heads = 8
 
     opts.use_cuda = torch.cuda.is_available() and not opts.no_cuda
+    opts.device = torch.device("cuda:0" if opts.use_cuda else "cpu")
     opts.run_name = "{}_{}".format(opts.run_name, time.strftime("%Y%m%dT%H%M%S"))
     opts.save_dir = os.path.join(
         opts.output_dir,
-        "VRP_{}".format(opts.graph_size),
         opts.run_name
     )
     if opts.bl_warmup_epochs is None:

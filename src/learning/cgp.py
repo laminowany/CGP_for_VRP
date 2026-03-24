@@ -150,14 +150,22 @@ class Add(nn.Module):
     """Simple adding for making skip connection possible"""
     def __init__(self):
         super(Add, self).__init__()
-        self.proj = None
 
     def forward(self, x, skip):
-        # if x.shape[-1] != skip.shape[-1]:
-        #     if self.proj is None:
-        #         self.proj = nn.Linear(skip.shape[-1], x.shape[-1])
-        #     skip = self.proj(skip)
+        if x.shape[-1] != skip.shape[-1]:
+            proj = nn.Linear(skip.shape[-1], x.shape[-1]).to(x.device)
+            skip = proj(skip)
         return x + skip
+
+# 1 - Normalization
+# 2 - MultiHeadAttention
+# 3 - Identity
+# 4 - MultiHeadAttention
+# 5 - Add ze Skipem
+# 6 - Linear scaling
+# 7 - Relu
+# 8 - Gelu
+# 9 - LayerNorm
 
 class Genome():
     _id_counter = 0 
@@ -179,45 +187,60 @@ class GenomeNN(nn.Module):
         self.genes = genes
         self.layers = nn.ModuleList()
         embed_dim = opts.embedding_dim
+        current_dim = embed_dim
         for gene in self.genes:
             layer_type = gene[0]
             if layer_type == 1:
-                layer = Normalization(embed_dim)
+                layer = Normalization(current_dim)
             elif layer_type == 2:
                 layer = nn.Sequential (SkipConnection(
                     MultiHeadAttention(
                         self.num_heads,
-                        input_dim=embed_dim,
-                        embed_dim=embed_dim
+                        input_dim=current_dim,
+                        embed_dim=current_dim
                     )
                 ))
             elif layer_type == 3:
-                layer =  SkipConnection(
-                    nn.Sequential(
-                        nn.Linear(embed_dim, self.feed_forward_hidden ),
-                        nn.ReLU(),
-                        nn.Linear(self.feed_forward_hidden , embed_dim)
-                    )
-                )
+                # layer =  SkipConnection(
+                #     nn.Sequential(
+                #         nn.Linear(embed_dim, self.feed_forward_hidden ),
+                #         nn.ReLU(),
+                #         nn.Linear(self.feed_forward_hidden , embed_dim)
+                #     )
+                # )
+                layer = nn.Identity()
             elif layer_type == 4:
                 layer = MultiHeadAttention(
                     self.num_heads,
-                    input_dim=embed_dim,
-                    embed_dim=embed_dim
+                    input_dim=current_dim,
+                    embed_dim=current_dim
                 )
             elif layer_type == 5:
                 layer = Add()
             elif layer_type == 6:
                 scaling = gene[1]
                 if scaling == 1: # scale up
-                    layer = nn.Linear(embed_dim, self.feed_forward_hidden)
-                elif scaling == 0: # keep dim
-                    layer = nn.Linear(embed_dim, embed_dim)
-                elif scaling == -1: # scale down
-                    layer = nn.Linear(self.feed_forward_hidden, embed_dim)    
+                    layer = nn.Linear(current_dim, current_dim*4)
+                    current_dim *= 4
+                elif scaling == -1 and current_dim >= 8: # scale down
+                    layer = nn.Linear(current_dim, current_dim // 4)
+                    current_dim //= 4
+                else: # keep dim
+                    layer = nn.Linear(current_dim, current_dim)
             elif layer_type == 7:
                 layer = nn.ReLU()
+            elif layer_type == 8:
+                layer = nn.GELU()
+            elif layer_type == 9:
+                layer = nn.LayerNorm(current_dim)
             self.layers.append(layer)
+
+        if current_dim != embed_dim: # repair
+            self.layers.append(nn.Linear(current_dim, embed_dim))
+            if current_dim < embed_dim:
+                self.genes.append((6,1))
+            else:
+                self.genes.append((6,-1))
     
     def forward(self, x):
         outputs = [x]
@@ -245,30 +268,65 @@ class GenomeFactory:
     def produce_genome(self, genes):
         return Genome(genes)
 
-    def get_random_genome(self):
-        length = 7 + random.randint(-3, 3)
+    def get_random_genome(self, length=7, deviation=3):
+        length = length + random.randint(-deviation, deviation)
         genome = []
         for i in range(length):
-            genome.append(self.spawn_genome_sequence(i))
+            genome.append(self.spawn_gene(i))
         return Genome(genome)
     
-    def spawn_genome_sequence(self, i) -> Genome:
-        layer_type = random.randint(1, 7)   
+    def spawn_gene(self, i):
+        layer_type = random.randint(1, 9)   
         if layer_type == 5:
-            skip_from = min(i + 1, random.randint(2, 5))
+            skip_from = random.randint(1, i + 1)
             return (layer_type, -skip_from)
         elif layer_type == 6:
-            return (layer_type, 0)
+            return (layer_type, random.randint(-1, 1))
         else:
             return (layer_type,)
-        
+    
+    def mutate(self, genome, p_mut=0.1, p_struct=0.2):
+        new_genes = list(genome.genes)
 
+        # 🔴 1. mutacja genów
+        for i in range(len(new_genes)):
+            if random.random() < p_mut:
+                new_genes[i] = self.mutate_gene(new_genes[i], i)
+
+        # 🔵 2. mutacja strukturalna (czasami)
+        if random.random() < p_struct:
+            new_genes = self.structural_mutation(new_genes)
         
-# # 1 - normalization 
-# # 2 - attention block
-# # 3 - feedforward block
-# # 4 - multihead attention
-# # 5 - add ( X - skip z X kroków wcześniej)
-# # 6 - Linear (1 - UP DIMEN, -1 DOWN DIMEN)
-# # 7 - RELU
-# # genome [(1,2),  (1,3)]
+        return Genome(new_genes)
+
+    def mutate_gene(self, gene, i):
+        layer_type = gene[0]
+        mutation_type = random.choice(["type", "param"])
+
+        # zmiana typu
+        if mutation_type == "type":
+            return self.spawn_gene(i)
+
+        # zmiana parametru
+        else:
+            if layer_type == 5:
+                skip_from = skip_from = random.randint(1, i + 1)
+                return (5, -skip_from)
+            elif layer_type == 6:
+                return (6, random.randint(-1, 1))
+            else:
+                return self.spawn_gene(i)
+    
+    def structural_mutation(self, genes):
+        op = random.choice(["add", "remove"])
+
+        if op == "add" and len(genes) < 50:
+            i = random.randint(0, len(genes))
+            new_gene = self.spawn_gene(i)
+            genes.insert(i, new_gene)
+
+        elif op == "remove" and len(genes) > 3:
+            i = random.randint(0, len(genes) - 1)
+            genes.pop(i)
+
+        return genes

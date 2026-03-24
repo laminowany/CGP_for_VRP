@@ -56,13 +56,10 @@ def clip_grad_norms(param_groups, max_norm=math.inf):
     return grad_norms, grad_norms_clipped
 
 
-def train_epoch(model, optimizer, baseline, lr_scheduler, epoch, val_dataset, tb_logger, opts):
+def train_epoch(model, optimizer, baseline, lr_scheduler, epoch, val_dataset, opts):
     #print("Start train epoch {}, lr={} for run {}".format(epoch, optimizer.param_groups[0]['lr'], opts.run_name))
     step = epoch * (opts.epoch_size // opts.batch_size)
     start_time = time.time()
-
-
-    tb_logger.log_value('learnrate_pg0', optimizer.param_groups[0]['lr'], step)
 
     # Generate new training data for each epoch
     training_dataset = baseline.wrap_dataset(CVRP.make_dataset(
@@ -79,17 +76,13 @@ def train_epoch(model, optimizer, baseline, lr_scheduler, epoch, val_dataset, tb
             model,
             optimizer,
             baseline,
-            epoch,
-            batch_id,
-            step,
             batch,
-            tb_logger,
             opts
         )
 
         step += 1
 
-    epoch_duration = time.time() - start_time
+    #epoch_duration = time.time() - start_time
     #print("Finished epoch {}, took {} s".format(epoch, time.strftime('%H:%M:%S', time.gmtime(epoch_duration))))
 
     # if epoch == opts.n_epochs - 1:
@@ -107,12 +100,7 @@ def train_epoch(model, optimizer, baseline, lr_scheduler, epoch, val_dataset, tb
     # )
 
     avg_reward = validate(model, val_dataset, opts)
-
-
-    tb_logger.log_value('val_avg_reward', avg_reward, step)
-
     baseline.epoch_callback(model, epoch)
-
     # lr_scheduler should be called at end of epoch
     lr_scheduler.step()
     return avg_reward
@@ -123,11 +111,7 @@ def train_batch(
         model,
         optimizer,
         baseline,
-        epoch,
-        batch_id,
-        step,
         batch,
-        tb_logger,
         opts
 ):
     x, bl_val = baseline.unwrap_batch(batch)
@@ -151,7 +135,3 @@ def train_batch(
     grad_norms = clip_grad_norms(optimizer.param_groups, opts.max_grad_norm)
     optimizer.step()
 
-    # Logging
-    if step % int(opts.log_step) == 0:
-        log_values(cost, grad_norms, epoch, batch_id, step,
-                   log_likelihood, reinforce_loss, bl_loss, tb_logger, opts)
