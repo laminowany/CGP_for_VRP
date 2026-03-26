@@ -19,8 +19,6 @@ def evaluate(opts, genome: Genome, logger: Logger, osobnik_id = None, validation
     return evalaute_with_encoder(opts, encoder, logger=logger, osobnik_id=osobnik_id, validation_set=validation_set)
 
 def evalaute_with_encoder(opts, encoder, logger: Logger, osobnik_id = None, validation_set = None):
-    # random.seed(opts.seed)
-    # torch.manual_seed(opts.seed)
     if not osobnik_id:
         osobnik_id = 0
 
@@ -52,15 +50,18 @@ def evalaute_with_encoder(opts, encoder, logger: Logger, osobnik_id = None, vali
         validation_set = CVRP.make_dataset(size=opts.graph_size, num_samples=opts.val_size)
     for epoch in range(opts.epoch_start, opts.epoch_start + opts.n_epochs):
         start = time.perf_counter()
-        score = train_epoch(
-            model,
-            optimizer,
-            baseline,
-            lr_scheduler,
-            epoch,
-            validation_set,
-            opts
-        )
+        try:
+            score = train_epoch(
+                model,
+                optimizer,
+                baseline,
+                lr_scheduler,
+                epoch,
+                validation_set,
+                opts
+            )
+        except TimeoutError:
+            return 10e6
         end = time.perf_counter()
         logger.record(
                 epoch=epoch,
@@ -68,7 +69,6 @@ def evalaute_with_encoder(opts, encoder, logger: Logger, osobnik_id = None, vali
                 score=score,
                 time=end-start
         )
-        print(f'epoka {epoch}, genom {osobnik_id}, score {score}')
     return score
 
 def benchmark_execution_time(opts, logger: Logger, vrp_sizes = [10, 20, 50, 100]):
@@ -110,31 +110,34 @@ def verify_sanity(opts, logger: Logger):
     else:
         print("All good boss")
 
-def cgp(opts, logger: Logger):
+def cgp(opts, parent, logger: Logger, generations = None):
     validation_set = CVRP.make_dataset(size=opts.graph_size, num_samples=opts.val_size)
     opts.n_epochs = 5
     opts.epoch_size = 128000
     factory = GenomeFactory()
-    generations = 1000
     lambda_ = 4
     osobnik_id = 0   
-    parent = factory.produce_genome([ (4,), (5, -2), (1,), (6, 1), (7,), (6, -1), (5, -4),  (1,)]*3) # baseline
-    #parent =  factory.produce_genome([(4,), (5, -2), (1,), (6, 1), (2,), (6, -1), (5, -4), (7,), (1,), (5, -2), (1,), (6, 1), (7,), (6, -1), (5, -4), (8,), (4,), (5, -2), (1,), (6, 0), (7,), (6, -1), (9,), (5, -4), (1,)])
-    parent.score = evaluate(opts, parent, logger=logger, osobnik_id=osobnik_id, validation_set=validation_set) #4.831925868988037
+    #parent = factory.produce_genome([ (4,), (5, -2), (1,), (6, 1), (7,), (6, -1), (5, -4),  (1,)]*3) # baseline
+    parent =  factory.produce_genome([(4,), (5, -2), (1,), (6, 1), (2,), (3,), (6, 0), (7,), (1,), (1,), (6, 1), (7,), (6, -1), (5, -5), (8,), (7,), (5, -2), (1,), (6, 0), (7,), (6, -1), (9,), (5, -12), (1,), (6, 1), (6, -1)])
+    parent = factory.get_random_genome(25, 0)
+    parent.score = evaluate(opts, parent, logger=logger, osobnik_id=osobnik_id, validation_set=validation_set)
     print(f'genome:  {parent.genes}')
     print(f"gen -1 best score: {parent.score}")
     generation = 0
-    while True:
+    evaluated_cache = {}
+    while generation is None or generation <= generations:
         best = parent
         child = factory.mutate(parent)
 
         for _ in range(lambda_):
             osobnik_id += 1
             child = factory.mutate(parent)
-            #print(child.genes)
-            # print(f'child genome:  {child.genes}')
-            child.score = evaluate(opts, child, logger=logger, osobnik_id=osobnik_id, validation_set=validation_set)
-            logger.record(key="children", osobnik_id=osobnik_id, genome=parent.genes, score=parent.score)
+            if tuple(child.genes) in evaluated_cache:
+                child.score = evaluated_cache[tuple(child.genes)]
+            else:
+                child.score = evaluate(opts, child, logger=logger, osobnik_id=osobnik_id, validation_set=validation_set)
+                evaluated_cache[tuple(child.genes)] = child.score
+            logger.record(key="children", osobnik_id=osobnik_id, genome=child.genes, score=child.score)
             # print(f'child score:  {child.score}')
             if child.score <= best.score:
                 best = child
@@ -155,7 +158,7 @@ def test_random_chromosomes(opts, logger):
     opts.epoch_size = 12800
     validation_set = CVRP.make_dataset(size=opts.graph_size, num_samples=opts.val_size)
     factory = GenomeFactory()
-    genome = factory.produce_genome([ (4,), (5, -2), (1,), (6, 1), (7,), (6, -1), (5, -4),  (1,)]*3) # baseline
+    genome = genome = factory.get_random_genome(50, 10)
     osobnik_id = 0
     while True:
         score = evaluate(opts, genome, logger=logger, osobnik_id=osobnik_id, validation_set=validation_set)
@@ -173,7 +176,7 @@ def benchmark_random_chromosomes(opts, logger):
     chromosomes = [baseline]
     logger.record(key="children", osobnik_id=0, genome=chromosomes[-1])
     for i in range(10):
-        chromosomes.append(factory.get_random_genome(len(baseline), baseline//5))
+        chromosomes.append(factory.get_random_genome(len(baseline.genes), len(baseline.genes)//5))
         logger.record(key="children", osobnik_id=i+1, genome=chromosomes[-1])
     osobnik_id = 0
     for chrom in chromosomes:
@@ -185,29 +188,15 @@ def initial_setup(opts):
     random.seed(opts.seed)
     torch.manual_seed(opts.seed)
     os.makedirs(opts.save_dir)
-    # with open(os.path.join(opts.save_dir, "args.json"), 'w') as f:
-    #     json.dump(vars(opts), f, indent=True)
-    #opts.device = torch.device("cuda:0" if opts.use_cuda else "cpu")
 
 def run(opts):
     initial_setup(opts)
     logger = Logger(opts)
-    #test_random_chromosomes(opts, logger)
-    #test_single_chromosome(opts, logger, [(5, -1), (1,), (5, -2), (7,), (9,), (6, -1), (4,), (5, -8), (1,), (4,)])
-    
-    # test_single_chromosome(opts, logger, [(3,), (5, -2), (1,),(6, 1), (2,), (6, -1),])
-                                           #(5, -4),
-                                    #(7,), (1,), (5, -2), (1,), (5, -10), (7,), (6, -1), 
-                                  #(5, -4), (8,), (4,), (5, -2), (1,), (6, 0), (7,), (6, -1), (9,), (5, -4), (1,)],
-    # verify_sanity(opts, logger)
-    # benchmark_execution_time(opts, logger)
-    # return
 
-    #baseline = factory.produce_genome([ (4,), (5, -2), (1,), (6, 1), (7,), (6, -1), (5, -4),  (1,)]*3)
-    # baseline_score = 4.871978759765625
-    benchmark_random_chromosomes(opts, logger)
+    
+    best_known_so_far = GenomeFactory().produce_genome([(4,), (5, -2), (1,), (6, 1), (7,), (6, -1), (5, -4), (1,), (4,), (5, -2), (9,), (6, 1), (7,), (2,), (6, -1), (1,), (1,), (8,), (5, -2), (1,), (6, 1), (7,), (1,), (3,), (1,), (6, -1)])
+    cgp(opts, parent=best_known_so_far, logger=logger, generations=100)
     return
-    cgp(opts, logger=logger)
     #print(scores)
     #opts.n_epochs = 100
     # opts.graph_size = 10

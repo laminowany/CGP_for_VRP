@@ -69,9 +69,8 @@ def train_epoch(model, optimizer, baseline, lr_scheduler, epoch, val_dataset, op
     # Put model in train mode!
     model.train()
     model.set_decode_type("sampling")
-
+    start = time.perf_counter()
     for batch_id, batch in enumerate(tqdm(training_dataloader, disable=opts.no_progress_bar)):
-
         train_batch(
             model,
             optimizer,
@@ -79,7 +78,9 @@ def train_epoch(model, optimizer, baseline, lr_scheduler, epoch, val_dataset, op
             batch,
             opts
         )
-
+        execution_time = time.perf_counter() - start
+        if execution_time > opts.epoch_time_limit:
+            raise TimeoutError
         step += 1
 
     #epoch_duration = time.time() - start_time

@@ -77,6 +77,8 @@ def get_options(args=None):
     opts.no_progress_bar = True
     opts.n_heads = 8
 
+    opts.epoch_time_limit = 10*60 # 10 minut
+    
     opts.use_cuda = torch.cuda.is_available() and not opts.no_cuda
     opts.device = torch.device("cuda:0" if opts.use_cuda else "cpu")
     opts.run_name = "{}_{}".format(opts.run_name, time.strftime("%Y%m%dT%H%M%S"))
