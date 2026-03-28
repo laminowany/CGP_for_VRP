@@ -11,65 +11,8 @@ from learning.cgp import GenomeFactory, Genome
 from learning.encoders.graph_encoder import GraphAttentionEncoder
 from learning.reinforce_baselines import RolloutBaseline, WarmupBaseline
 from learning.problem_vrp import CVRP
-from utils.training import train_epoch
+from utils.training import evaluate, evalaute_with_encoder
 from utils.logger import Logger
-
-def evaluate(opts, genome: Genome, logger: Logger, osobnik_id = None, validation_set = None):
-    encoder = genome.build_nn(opts)
-    return evalaute_with_encoder(opts, encoder, logger=logger, osobnik_id=osobnik_id, validation_set=validation_set)
-
-def evalaute_with_encoder(opts, encoder, logger: Logger, osobnik_id = None, validation_set = None):
-    if not osobnik_id:
-        osobnik_id = 0
-
-    model = AttentionModel(
-        opts.embedding_dim,
-        opts.hidden_dim,
-        encoder=encoder,
-        n_encode_layers=opts.n_encode_layers,
-        mask_inner=True,
-        mask_logits=True,
-        normalization=opts.normalization,
-        tanh_clipping=opts.tanh_clipping,
-        checkpoint_encoder=opts.checkpoint_encoder,
-        shrink_size=opts.shrink_size
-    ).to(opts.device)
-
-    baseline = RolloutBaseline(model, opts)
-    baseline = WarmupBaseline(baseline, opts.bl_warmup_epochs, warmup_exp_beta=opts.exp_beta)
-    optimizer = optim.Adam(
-        [{'params': model.parameters(), 'lr': opts.lr_model}]
-        + (
-            [{'params': baseline.get_learnable_parameters(), 'lr': opts.lr_critic}]
-            if len(baseline.get_learnable_parameters()) > 0
-            else []
-        )
-    )
-    lr_scheduler = optim.lr_scheduler.LambdaLR(optimizer, lambda epoch: opts.lr_decay ** epoch)
-    if not validation_set:
-        validation_set = CVRP.make_dataset(size=opts.graph_size, num_samples=opts.val_size)
-    for epoch in range(opts.epoch_start, opts.epoch_start + opts.n_epochs):
-        start = time.perf_counter()
-        try:
-            score = train_epoch(
-                model,
-                optimizer,
-                baseline,
-                lr_scheduler,
-                epoch,
-                validation_set,
-                opts
-            )
-        except TimeoutError:
-            return 10e6
-        end = time.perf_counter()
-        logger.record(
-                epoch=epoch,
-                osobnik=osobnik_id,
-                score=score,
-                time=end-start
-        )
-    return score
 
 def benchmark_execution_time(opts, logger: Logger, vrp_sizes = [10, 20, 50, 100]):
     baseline = GenomeFactory().produce_genome([ (4,), (5, -2), (1,), (6, 1), (7,), (6, -1), (5, -4),  (1,)]*3)
@@ -148,14 +91,18 @@ def cgp(opts, parent, logger: Logger, generations = None):
         generation += 1
 
 def test_single_chromosome(opts, logger, genes):
-    opts.n_epochs = 1
-    opts.epoch_size = 12800
     genome = GenomeFactory().produce_genome(genes)
     evaluate(opts, genome, logger=logger)
 
+def test_chromosomes(opts, logger, genes):
+    validation_set = CVRP.make_dataset(size=opts.graph_size, num_samples=opts.val_size)
+    factory = GenomeFactory()
+    osobnik_id = 0
+    for gene in genes:
+        evaluate(opts, factory.produce_genome(gene), logger=logger, osobnik_id=osobnik_id, validation_set=validation_set)
+        osobnik_id += 1
+
 def test_random_chromosomes(opts, logger):
-    opts.n_epochs = 1
-    opts.epoch_size = 12800
     validation_set = CVRP.make_dataset(size=opts.graph_size, num_samples=opts.val_size)
     factory = GenomeFactory()
     genome = genome = factory.get_random_genome(50, 10)
@@ -167,21 +114,18 @@ def test_random_chromosomes(opts, logger):
         genome = factory.get_random_genome(50, 10)
         print(genome.genes)
 
-def benchmark_random_chromosomes(opts, logger):
-    opts.n_epochs = 100
-    opts.epoch_size = 1280000
+def benchmark_random_chromosomes(opts, logger, length, n = 10):
     validation_set = CVRP.make_dataset(size=opts.graph_size, num_samples=opts.val_size)
     factory = GenomeFactory()
-    baseline = factory.produce_genome([ (4,), (5, -2), (1,), (6, 1), (7,), (6, -1), (5, -4),  (1,)]*3) # baseline
-    chromosomes = [baseline]
-    logger.record(key="children", osobnik_id=0, genome=chromosomes[-1])
-    for i in range(10):
-        chromosomes.append(factory.get_random_genome(len(baseline.genes), len(baseline.genes)//5))
-        logger.record(key="children", osobnik_id=i+1, genome=chromosomes[-1])
+    #baseline = factory.produce_genome([ (4,), (5, -2), (1,), (6, 1), (7,), (6, -1), (5, -4),  (1,)]*3) # baseline
+    #logger.record(key="children", osobnik_id=0, genome=chromosomes[-1])
     osobnik_id = 0
-    for chrom in chromosomes:
-        score = evaluate(opts, chrom, logger=logger, osobnik_id=osobnik_id, validation_set=validation_set)
-        logger.record(key="performance", osobnik_id=osobnik_id, score=score)
+    while osobnik_id < n:
+        genome = factory.get_random_genome(length)
+        score = evaluate(opts, genome, logger=logger, osobnik_id=osobnik_id, validation_set=validation_set)
+        if not score:
+            continue
+        logger.record(key="genomes", osobnik_id=osobnik_id, score=score, genome=genome.genes)
         osobnik_id += 1
 
 def initial_setup(opts):
@@ -192,33 +136,35 @@ def initial_setup(opts):
 def run(opts):
     initial_setup(opts)
     logger = Logger(opts)
+    opts.n_epochs = 100
+    opts.epoch_size = 1280000
+    #benchmark_random_chromosomes(opts, logger, length=25, n=10)
+    genomes = load_genomes("./genomes/initialversion.txt")
+    test_chromosomes(opts, logger, genomes)
+    return
+    #print(genomes)
 
-    
+    # opts.n_epochs = 20
+    # opts.epoch_size = 128000
+    # test_single_chromosome(opts, logger=logger, genes=[(4,), (5, -2), (6, 0), (6, 0), (2,), (2,), (7,), (2,), (5, -4)])
+    # return
+
+
     best_known_so_far = GenomeFactory().produce_genome([(4,), (5, -2), (1,), (6, 1), (7,), (6, -1), (5, -4), (1,), (4,), (5, -2), (9,), (6, 1), (7,), (2,), (6, -1), (1,), (1,), (8,), (5, -2), (1,), (6, 1), (7,), (1,), (3,), (1,), (6, -1)])
     cgp(opts, parent=best_known_so_far, logger=logger, generations=100)
     return
-    #print(scores)
-    #opts.n_epochs = 100
-    # opts.graph_size = 10
-    # print(f"EPOCHS: {opts.n_epochs}")
-    # print(f"GRAPH SIZE: {opts.graph_size}")
-    # scores = []
-    # genomes = []
-    # baseline_genom = GenomeEncoder(opts.emb, [(4,), (5, -2), (1,), (6, 1), (7,), (6, -1), (5, -4), (1,)]*3)
-    # genomes.append(baseline_genom)
-    # scores = calculate_scores(opts, tb_logger, genomes[0], osobnik_id=0)
-    # print(scores)
-    # for i in range(4):
-    #     genome = GenomeEncoder.spawn_random_genome()
-    #     genomes.append(genome)
 
-    #score = calculate_score(opts, tb_logger, genome, logger, osobnik_id=i)
-    # for i, genome in enumerate(genomes):
-    #     score = calculate_score(opts, tb_logger, genome, logger, osobnik_id=i)
-
-    # logger.save_csv("vrp10_20_epochs_epoch_128000.csv")
-
-
+import ast
+def load_genomes(file_path):
+    result = []
+    with open(file_path, 'r') as f:
+        for line in f:
+            line = line.strip()
+            if line:  # skip empty lines
+                parsed = ast.literal_eval(line)
+                result.append(parsed)
+    
+    return result
 
 if __name__ == "__main__":
     run(get_options())

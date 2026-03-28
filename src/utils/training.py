@@ -1,22 +1,78 @@
 import time
-import os
 import torch
 import math
+import torch.optim as optim
 
 from tqdm import tqdm
 from torch.utils.data import DataLoader
-from utils.misc import move_to, log_values
+from learning.attention_model import AttentionModel
+from learning.cgp import Genome
+from learning.reinforce_baselines import RolloutBaseline, WarmupBaseline
+from utils.logger import Logger
+from utils.misc import move_to
 from learning.problem_vrp import CVRP
 
 
+def evaluate(opts, genome: Genome, logger: Logger, osobnik_id = None, validation_set = None):
+    encoder = genome.build_nn(opts)
+    return evalaute_with_encoder(opts, encoder, logger=logger, osobnik_id=osobnik_id, validation_set=validation_set)
+
+def evalaute_with_encoder(opts, encoder, logger: Logger, osobnik_id = None, validation_set = None):
+    if not osobnik_id:
+        osobnik_id = 0
+
+    model = AttentionModel(
+        opts.embedding_dim,
+        opts.hidden_dim,
+        encoder=encoder,
+        n_encode_layers=opts.n_encode_layers,
+        mask_inner=True,
+        mask_logits=True,
+        normalization=opts.normalization,
+        tanh_clipping=opts.tanh_clipping,
+        checkpoint_encoder=opts.checkpoint_encoder,
+        shrink_size=opts.shrink_size
+    ).to(opts.device)
+
+    baseline = RolloutBaseline(model, opts)
+    baseline = WarmupBaseline(baseline, opts.bl_warmup_epochs, warmup_exp_beta=opts.exp_beta)
+    optimizer = optim.Adam(
+        [{'params': model.parameters(), 'lr': opts.lr_model}]
+        + (
+            [{'params': baseline.get_learnable_parameters(), 'lr': opts.lr_critic}]
+            if len(baseline.get_learnable_parameters()) > 0
+            else []
+        )
+    )
+    lr_scheduler = optim.lr_scheduler.LambdaLR(optimizer, lambda epoch: opts.lr_decay ** epoch)
+    if not validation_set:
+        validation_set = CVRP.make_dataset(size=opts.graph_size, num_samples=opts.val_size)
+    for epoch in range(opts.epoch_start, opts.epoch_start + opts.n_epochs):
+        start = time.perf_counter()
+        try:
+            score = train_epoch(
+                model,
+                optimizer,
+                baseline,
+                lr_scheduler,
+                epoch,
+                validation_set,
+                opts
+            )
+        except TimeoutError:
+            return None
+        end = time.perf_counter()
+        logger.record(
+                epoch=epoch,
+                osobnik=osobnik_id,
+                score=score,
+                time=end-start
+        )
+    return score
+
 def validate(model, dataset, opts):
-    # Validate
-    #print('Validating...')
     cost = rollout(model, dataset, opts)
     avg_cost = cost.mean()
-    # print('Validation overall avg_cost: {} +- {}'.format(
-    #     avg_cost, torch.std(cost) / math.sqrt(len(cost))))
-
     return avg_cost
 
 
