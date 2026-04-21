@@ -2,6 +2,7 @@ import time
 import torch
 import math
 import torch.optim as optim
+import random
 
 from tqdm import tqdm
 from torch.utils.data import DataLoader
@@ -13,11 +14,16 @@ from utils.misc import move_to
 from learning.problem_vrp import CVRP
 
 
-def evaluate(opts, genome: Genome, logger: Logger, osobnik_id = None, validation_set = None):
+def evaluate(opts, genome: Genome, logger: Logger, osobnik_id = None):
     encoder = genome.build_nn(opts)
-    return evalaute_with_encoder(opts, encoder, logger=logger, osobnik_id=osobnik_id, validation_set=validation_set)
+    try:
+        score = evalaute_with_encoder(opts, encoder, logger=logger, osobnik_id=osobnik_id)
+    except:
+        score = None
+        print(f"Exception while evaluating {genome.genes}")
+    return evalaute_with_encoder(opts, encoder, logger=logger, osobnik_id=osobnik_id)
 
-def evalaute_with_encoder(opts, encoder, logger: Logger, osobnik_id = None, validation_set = None):
+def evalaute_with_encoder(opts, encoder, logger: Logger, osobnik_id = None):
     if not osobnik_id:
         osobnik_id = 0
 
@@ -45,8 +51,14 @@ def evalaute_with_encoder(opts, encoder, logger: Logger, osobnik_id = None, vali
         )
     )
     lr_scheduler = optim.lr_scheduler.LambdaLR(optimizer, lambda epoch: opts.lr_decay ** epoch)
+    validation_set = opts.validation_set
     if not validation_set:
         validation_set = CVRP.make_dataset(size=opts.graph_size, num_samples=opts.val_size)
+    
+    # reset seed for reproducibility
+    random.seed(opts.seed)
+    torch.manual_seed(opts.seed)
+
     for epoch in range(opts.epoch_start, opts.epoch_start + opts.n_epochs):
         start = time.perf_counter()
         try:

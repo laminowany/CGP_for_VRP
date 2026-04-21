@@ -70,9 +70,6 @@ def get_options(args=None):
 
     # CUSTOM SZENIGANS
     opts.graph_size = 10
-    opts.epoch_size = 12800
-    opts.n_epochs = 10
-
     opts.baseline = 'rollout'
     opts.no_progress_bar = True
     opts.n_heads = 8

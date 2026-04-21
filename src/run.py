@@ -53,17 +53,17 @@ def verify_sanity(opts, logger: Logger):
     else:
         print("All good boss")
 
-def cgp(opts, parent, logger: Logger, generations = None):
-    validation_set = CVRP.make_dataset(size=opts.graph_size, num_samples=opts.val_size)
+def cgp(opts, logger: Logger, parent=None, generations=None):
+    opts.validation_set = CVRP.make_dataset(size=opts.graph_size, num_samples=opts.val_size)
     opts.n_epochs = 5
     opts.epoch_size = 128000
     factory = GenomeFactory()
     lambda_ = 4
-    osobnik_id = 0   
-    #parent = factory.produce_genome([ (4,), (5, -2), (1,), (6, 1), (7,), (6, -1), (5, -4),  (1,)]*3) # baseline
-    parent =  factory.produce_genome([(4,), (5, -2), (1,), (6, 1), (2,), (3,), (6, 0), (7,), (1,), (1,), (6, 1), (7,), (6, -1), (5, -5), (8,), (7,), (5, -2), (1,), (6, 0), (7,), (6, -1), (9,), (5, -12), (1,), (6, 1), (6, -1)])
-    parent = factory.get_random_genome(25, 0)
-    parent.score = evaluate(opts, parent, logger=logger, osobnik_id=osobnik_id, validation_set=validation_set)
+    osobnik_id = 0
+    if not parent:
+        parent = factory.produce_genome([ (4,), (5, -2), (1,), (6, 1), (7,), (6, -1), (5, -4),  (1,)]*3) # baseline
+    # parent = factory.get_random_genome(25, 0)
+    parent.score = evaluate(opts, parent, logger=logger, osobnik_id=osobnik_id)
     print(f'genome:  {parent.genes}')
     print(f"gen -1 best score: {parent.score}")
     generation = 0
@@ -78,11 +78,10 @@ def cgp(opts, parent, logger: Logger, generations = None):
             if tuple(child.genes) in evaluated_cache:
                 child.score = evaluated_cache[tuple(child.genes)]
             else:
-                child.score = evaluate(opts, child, logger=logger, osobnik_id=osobnik_id, validation_set=validation_set)
+                child.score = evaluate(opts, child, logger=logger, osobnik_id=osobnik_id)
                 evaluated_cache[tuple(child.genes)] = child.score
             logger.record(key="children", osobnik_id=osobnik_id, genome=child.genes, score=child.score)
-            # print(f'child score:  {child.score}')
-            if child.score <= best.score:
+            if child.score and child.score <= best.score:
                 best = child
                 parent = best
         parent = best
@@ -90,39 +89,39 @@ def cgp(opts, parent, logger: Logger, generations = None):
         logger.record(key="evolution", generation=generation, genome=parent.genes, score=parent.score)
         generation += 1
 
-def test_single_chromosome(opts, logger, genes):
+def test_single_chromosome(opts, logger, genes, osobnik_id=None):
     genome = GenomeFactory().produce_genome(genes)
-    evaluate(opts, genome, logger=logger)
+    evaluate(opts, genome, logger=logger, osobnik_id=osobnik_id)
 
 def test_chromosomes(opts, logger, genes):
-    validation_set = CVRP.make_dataset(size=opts.graph_size, num_samples=opts.val_size)
+    opts.validation_set = CVRP.make_dataset(size=opts.graph_size, num_samples=opts.val_size)
     factory = GenomeFactory()
     osobnik_id = 0
     for gene in genes:
-        evaluate(opts, factory.produce_genome(gene), logger=logger, osobnik_id=osobnik_id, validation_set=validation_set)
+        evaluate(opts, factory.produce_genome(gene), logger=logger, osobnik_id=osobnik_id)
         osobnik_id += 1
 
 def test_random_chromosomes(opts, logger):
-    validation_set = CVRP.make_dataset(size=opts.graph_size, num_samples=opts.val_size)
+    opts.validation_set = CVRP.make_dataset(size=opts.graph_size, num_samples=opts.val_size)
     factory = GenomeFactory()
     genome = genome = factory.get_random_genome(50, 10)
     osobnik_id = 0
     while True:
-        score = evaluate(opts, genome, logger=logger, osobnik_id=osobnik_id, validation_set=validation_set)
+        score = evaluate(opts, genome, logger=logger, osobnik_id=osobnik_id)
         logger.record(key="randomization", osobnik_id=osobnik_id, genome=genome.genes, score=score)
         osobnik_id += 1
         genome = factory.get_random_genome(50, 10)
         print(genome.genes)
 
 def benchmark_random_chromosomes(opts, logger, length, n = 10):
-    validation_set = CVRP.make_dataset(size=opts.graph_size, num_samples=opts.val_size)
+    opts.validation_set = CVRP.make_dataset(size=opts.graph_size, num_samples=opts.val_size)
     factory = GenomeFactory()
     #baseline = factory.produce_genome([ (4,), (5, -2), (1,), (6, 1), (7,), (6, -1), (5, -4),  (1,)]*3) # baseline
     #logger.record(key="children", osobnik_id=0, genome=chromosomes[-1])
     osobnik_id = 0
     while osobnik_id < n:
         genome = factory.get_random_genome(length)
-        score = evaluate(opts, genome, logger=logger, osobnik_id=osobnik_id, validation_set=validation_set)
+        score = evaluate(opts, genome, logger=logger, osobnik_id=osobnik_id)
         if not score:
             continue
         logger.record(key="genomes", osobnik_id=osobnik_id, score=score, genome=genome.genes)
@@ -136,22 +135,19 @@ def initial_setup(opts):
 def run(opts):
     initial_setup(opts)
     logger = Logger(opts)
-    opts.n_epochs = 100
-    opts.epoch_size = 1280000
-    #benchmark_random_chromosomes(opts, logger, length=25, n=10)
-    genomes = load_genomes("./genomes/initialversion.txt")
-    test_chromosomes(opts, logger, genomes)
-    return
-    #print(genomes)
-
-    # opts.n_epochs = 20
+    # opts.n_epochs = 10
     # opts.epoch_size = 128000
-    # test_single_chromosome(opts, logger=logger, genes=[(4,), (5, -2), (6, 0), (6, 0), (2,), (2,), (7,), (2,), (5, -4)])
+    # opts.validation_set = CVRP.make_dataset(size=opts.graph_size, num_samples=opts.val_size)
+    # genome = [(2,), (1,), (9,), (9,), (9,), (8,), (5, -8), (1,), (3,), (5, -1), (5, -8), (9,), (9,), (9,), (1,), (1,), (6, 0), (6, 0), (6, -1), (9,), (8,), (6, 1), (2,), (1,), (1,), (5, -18)]
+    # for i in range(10):
+    #     test_single_chromosome(opts, logger, genome, i)
+
+    #benchmark_random_chromosomes(opts, logger, length=25, n=10)
+    # genomes = load_genomes("./genomes/initialversion.txt")
+    # test_chromosomes(opts, logger, genomes)
     # return
 
-
-    best_known_so_far = GenomeFactory().produce_genome([(4,), (5, -2), (1,), (6, 1), (7,), (6, -1), (5, -4), (1,), (4,), (5, -2), (9,), (6, 1), (7,), (2,), (6, -1), (1,), (1,), (8,), (5, -2), (1,), (6, 1), (7,), (1,), (3,), (1,), (6, -1)])
-    cgp(opts, parent=best_known_so_far, logger=logger, generations=100)
+    cgp(opts, logger=logger, generations=64, parent=GenomeFactory().produce_genome([(4,), (5, -2), (1,), (6, 1), (7,), (6, -1), (5, -4), (1,), (4,), (5, -2), (9,), (6, 1), (7,), (6, -1), (5, -4), (1,), (4,), (5, -2), (1,), (6, 1), (6, 0), (6, -1), (5, -4), (1,)]))
     return
 
 import ast

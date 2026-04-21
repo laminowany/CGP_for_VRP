@@ -1,6 +1,7 @@
 import math
 import torch
 import random
+import time 
 
 from torch import nn
 
@@ -286,6 +287,7 @@ class GenomeFactory:
             return (layer_type,)
     
     def mutate(self, genome, p_mut=0.1, p_struct=0.2):
+        random.seed(time.time())
         new_genes = list(genome.genes)
 
         # 🔴 1. mutacja genów
