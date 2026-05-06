@@ -83,6 +83,7 @@ def get_options(args=None):
         opts.output_dir,
         opts.run_name
     )
+    opts.reproducible_seed = True
     if opts.bl_warmup_epochs is None:
         opts.bl_warmup_epochs = 1 if opts.baseline == 'rollout' else 0
     assert (opts.bl_warmup_epochs == 0) or (opts.baseline == 'rollout')

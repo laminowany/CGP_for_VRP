@@ -17,13 +17,14 @@ from learning.problem_vrp import CVRP
 def evaluate(opts, genome: Genome, logger: Logger, osobnik_id = None):
     encoder = genome.build_nn(opts)
     try:
-        score = evalaute_with_encoder(opts, encoder, logger=logger, osobnik_id=osobnik_id)
-    except:
+        score = evaluate_with_encoder(opts, encoder, logger=logger, osobnik_id=osobnik_id)
+    except Exception as e:
         score = None
         print(f"Exception while evaluating {genome.genes}")
-    return evalaute_with_encoder(opts, encoder, logger=logger, osobnik_id=osobnik_id)
+        print(e)
+    return score
 
-def evalaute_with_encoder(opts, encoder, logger: Logger, osobnik_id = None):
+def evaluate_with_encoder(opts, encoder, logger: Logger, osobnik_id = None):
     if not osobnik_id:
         osobnik_id = 0
 
@@ -51,13 +52,13 @@ def evalaute_with_encoder(opts, encoder, logger: Logger, osobnik_id = None):
         )
     )
     lr_scheduler = optim.lr_scheduler.LambdaLR(optimizer, lambda epoch: opts.lr_decay ** epoch)
-    validation_set = opts.validation_set
+    validation_set = getattr(opts, "validation_set", None)
     if not validation_set:
         validation_set = CVRP.make_dataset(size=opts.graph_size, num_samples=opts.val_size)
     
-    # reset seed for reproducibility
-    random.seed(opts.seed)
-    torch.manual_seed(opts.seed)
+    if opts.reproducible_seed:
+        random.seed(opts.seed)
+        torch.manual_seed(opts.seed)
 
     for epoch in range(opts.epoch_start, opts.epoch_start + opts.n_epochs):
         start = time.perf_counter()

@@ -7,11 +7,11 @@ import random
 
 from utils.process import get_options
 from learning.attention_model import AttentionModel
-from learning.cgp import GenomeFactory, Genome
+from learning.cgp import GenomeFactory, CGP_Net
 from learning.encoders.graph_encoder import GraphAttentionEncoder
 from learning.reinforce_baselines import RolloutBaseline, WarmupBaseline
 from learning.problem_vrp import CVRP
-from utils.training import evaluate, evalaute_with_encoder
+from utils.training import evaluate, evaluate_with_encoder
 from utils.logger import Logger
 
 def benchmark_execution_time(opts, logger: Logger, vrp_sizes = [10, 20, 50, 100]):
@@ -38,7 +38,7 @@ def verify_sanity(opts, logger: Logger):
     random.seed(opts.seed)
     torch.manual_seed(opts.seed)
     my_encoder = baseline.build_nn(opts)
-    score_orig_encoder = evalaute_with_encoder(opts, my_encoder, logger, osobnik_id=0)
+    score_orig_encoder = evaluate_with_encoder(opts, my_encoder, logger, osobnik_id=0)
     random.seed(opts.seed)
     torch.manual_seed(opts.seed)
     original_encoder = GraphAttentionEncoder(
@@ -47,7 +47,7 @@ def verify_sanity(opts, logger: Logger):
         n_layers=opts.n_encode_layers,
         normalization=opts.normalization
     )
-    score_genetic_encoder = evalaute_with_encoder(opts, original_encoder, logger, osobnik_id=1)
+    score_genetic_encoder = evaluate_with_encoder(opts, original_encoder, logger, osobnik_id=1)
     if score_orig_encoder != score_genetic_encoder:
         print("CARAMBA!")
     else:
@@ -138,17 +138,44 @@ def run(opts):
     # opts.n_epochs = 10
     # opts.epoch_size = 128000
     # opts.validation_set = CVRP.make_dataset(size=opts.graph_size, num_samples=opts.val_size)
-    # genome = [(2,), (1,), (9,), (9,), (9,), (8,), (5, -8), (1,), (3,), (5, -1), (5, -8), (9,), (9,), (9,), (1,), (1,), (6, 0), (6, 0), (6, -1), (9,), (8,), (6, 1), (2,), (1,), (1,), (5, -18)]
-    # for i in range(10):
-    #     test_single_chromosome(opts, logger, genome, i)
+    #genome = [(2,), (1,), (9,), (9,), (9,), (8,), (5, -8), (1,), (3,), (5, -1), (5, -8), (9,), (9,), (9,), (1,), (1,), (6, 0), (6, 0), (6, -1), (9,), (8,), (6, 1), (2,), (1,), (1,), (5, -18)]
+    # baseline = [ (4,), (5, -2), (1,), (6, 1), (7,), (6, -1), (5, -4),  (1,)]
+    # baseline = [(4,), (7,)]
+    # opts.reproducible_seed = True
+    # opts.n_epochs = 5
+    # opts.epoch_size = 12800
+    # for i in range(5):
+    #     test_single_chromosome(opts, logger, baseline, i)
 
-    #benchmark_random_chromosomes(opts, logger, length=25, n=10)
-    # genomes = load_genomes("./genomes/initialversion.txt")
-    # test_chromosomes(opts, logger, genomes)
-    # return
 
-    cgp(opts, logger=logger, generations=64, parent=GenomeFactory().produce_genome([(4,), (5, -2), (1,), (6, 1), (7,), (6, -1), (5, -4), (1,), (4,), (5, -2), (9,), (6, 1), (7,), (6, -1), (5, -4), (1,), (4,), (5, -2), (1,), (6, 1), (6, 0), (6, -1), (5, -4), (1,)]))
-    return
+    opts.reproducible_seed = False
+    opts.n_epochs = 5
+    opts.epoch_size = 12800
+    baseline = [ (4,0), (5,(0,9),), (2,10), (3,11,1), (7,12), (3,13,-1), (5,(10, 14),),  (2,15)]
+    x_dim = len(baseline)
+    genome = [*[None]*x_dim,
+             *baseline,
+             *[None]*x_dim]
+    outputs = [16]
+
+    # for i in range(5, 10):
+    encoder = CGP_Net(opts.embedding_dim, x_dim, 3, outputs, genome=genome)
+    base_snapshot = encoder.save_snapshot()
+    children = encoder.produce_offspring(5, 0)
+    opts.n_epochs = 10
+    opts.epoch_size = 12800
+    evaluate_with_encoder(opts, encoder, logger, 0)
+    snapshot = encoder.save_snapshot()
+    children[0].load_snapshot(base_snapshot)
+    evaluate_with_encoder(opts, children[0], logger, 1)
+    children[1].load_snapshot(base_snapshot)
+    evaluate_with_encoder(opts, children[1], logger, 2)
+    #evaluate_with_encoder(opts, encoder, logger, 0)
+    # for i in range(5):
+    #     evaluate_with_encoder(opts, children[i], logger, i + 1)
+
+
+
 
 import ast
 def load_genomes(file_path):
