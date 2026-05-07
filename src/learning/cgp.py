@@ -232,7 +232,7 @@ class CGP_Net(nn.Module):
             self.nets = nets
             for pos, net in enumerate(self.nets):
                 if net is not None and net.nn is not None:
-                    self.add_module(f"net_{pos}", net.nn)
+                    self.add_module(f"node_{pos}", net.nn)
         else:
             self.nets = [CGP_Element(None, self.embed_dim), *[None] * (self.len-1)]
             for x in range(self.x_dim):
@@ -331,7 +331,7 @@ class CGP_Net(nn.Module):
         else:
             raise f'unknown layer type {gene.type}'
         
-        self.add_module(f"net_{gene.pos}", net)
+        self.add_module(f"node_{gene.pos}", net)
         return CGP_Element(net, output_dim)
 
     def produce_offspring(self, n, p_mut=0.1):

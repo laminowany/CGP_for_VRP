@@ -1,4 +1,5 @@
 import math
+import os
 import torch
 from torch import nn
 from typing import NamedTuple
@@ -32,61 +33,45 @@ class AttentionModelFixed(NamedTuple):
 class AttentionModel(nn.Module):
      
     def __init__(self,
-                 embedding_dim,
-                 hidden_dim,
-                 encoder,
-                 n_encode_layers=2,
-                 tanh_clipping=10.,
-                 mask_inner=True,
-                 mask_logits=True,
-                 normalization='batch',
-                 n_heads=8,
-                 checkpoint_encoder=False,
-                 shrink_size=None):
+                 opts,
+                 encoder,):
         super(AttentionModel, self).__init__()
-
-        self.embedding_dim = embedding_dim
-        self.hidden_dim = hidden_dim
+        self.embedding_dim = opts.embedding_dim
+        self.hidden_dim =  opts.hidden_dim
         self.embedder  = encoder
-        self.n_encode_layers = n_encode_layers
+        self.n_encode_layers = opts.n_encode_layers
         self.decode_type = None
         self.temp = 1.0
 
-        self.tanh_clipping = tanh_clipping
+        self.tanh_clipping = opts.tanh_clipping
 
-        self.mask_inner = mask_inner
-        self.mask_logits = mask_logits
+        self.mask_inner = True
+        self.mask_logits = True
 
-        self.n_heads = n_heads
-        self.checkpoint_encoder = checkpoint_encoder
-        self.shrink_size = shrink_size
+        self.n_heads = 8
+        self.checkpoint_encoder = opts.checkpoint_encoder
+        self.shrink_size = opts.shrink_size
 
         # Embedding of last node + remaining_capacity / remaining length / remaining prize to collect
-        step_context_dim = embedding_dim + 1
+        step_context_dim =  self.embedding_dim + 1
 
         node_dim = 3  # x, y, demand / prize
 
         # Special embedding projection for depot node
-        self.init_embed_depot = nn.Linear(2, embedding_dim)
-        self.init_embed = nn.Linear(node_dim, embedding_dim)
-
-        # TODO ENKODER
-        # self.embedder = TrivialEncoder(embed_dim=embedding_dim)
-        # self.embedder = GraphAttentionEncoder(
-        #     n_heads=n_heads,
-        #     embed_dim=embedding_dim,
-        #     n_layers=self.n_encode_layers,
-        #     normalization=normalization
-        # )
+        self.init_embed_depot = nn.Linear(2,  self.embedding_dim)
+        self.init_embed = nn.Linear(node_dim, self.embedding_dim)
 
         # For each node we compute (glimpse key, glimpse value, logit key) so 3 * embedding_dim
-        self.project_node_embeddings = nn.Linear(embedding_dim, 3 * embedding_dim, bias=False)
-        self.project_fixed_context = nn.Linear(embedding_dim, embedding_dim, bias=False)
-        self.project_step_context = nn.Linear(step_context_dim, embedding_dim, bias=False)
-        assert embedding_dim % n_heads == 0
+        self.project_node_embeddings = nn.Linear(self.embedding_dim, 3 * self.embedding_dim, bias=False)
+        self.project_fixed_context = nn.Linear(self.embedding_dim, self.embedding_dim, bias=False)
+        self.project_step_context = nn.Linear(step_context_dim, self.embedding_dim, bias=False)
+        assert self.embedding_dim % self.n_heads == 0
         # Note n_heads * val_dim == embedding_dim so input to project_out is embedding_dim
-        self.project_out = nn.Linear(embedding_dim, embedding_dim, bias=False)
+        self.project_out = nn.Linear(self.embedding_dim, self.embedding_dim, bias=False)
+        self.to(opts.device)    
 
+    def load_weights(self, filename):
+        self.load_state_dict(torch.load(filename), strict=False)
 
     def set_decode_type(self, decode_type, temp=None):
         self.decode_type = decode_type

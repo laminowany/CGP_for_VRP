@@ -1,3 +1,5 @@
+from dataclasses import dataclass
+import os
 import time
 import torch
 import math
@@ -13,33 +15,15 @@ from utils.logger import Logger
 from utils.misc import move_to
 from learning.problem_vrp import CVRP
 
+@dataclass
+class EvaluationResult:
+    score: float
+    snapshots: list
+    
 
-def evaluate(opts, genome: Genome, logger: Logger, osobnik_id = None):
-    encoder = genome.build_nn(opts)
-    try:
-        score = evaluate_with_encoder(opts, encoder, logger=logger, osobnik_id=osobnik_id)
-    except Exception as e:
-        score = None
-        print(f"Exception while evaluating {genome.genes}")
-        print(e)
-    return score
-
-def evaluate_with_encoder(opts, encoder, logger: Logger, osobnik_id = None):
+def evaluate(opts, model, logger: Logger, osobnik_id = None, snapshots_epochs=[]) -> EvaluationResult:
     if not osobnik_id:
         osobnik_id = 0
-
-    model = AttentionModel(
-        opts.embedding_dim,
-        opts.hidden_dim,
-        encoder=encoder,
-        n_encode_layers=opts.n_encode_layers,
-        mask_inner=True,
-        mask_logits=True,
-        normalization=opts.normalization,
-        tanh_clipping=opts.tanh_clipping,
-        checkpoint_encoder=opts.checkpoint_encoder,
-        shrink_size=opts.shrink_size
-    ).to(opts.device)
 
     baseline = RolloutBaseline(model, opts)
     baseline = WarmupBaseline(baseline, opts.bl_warmup_epochs, warmup_exp_beta=opts.exp_beta)
@@ -59,8 +43,8 @@ def evaluate_with_encoder(opts, encoder, logger: Logger, osobnik_id = None):
     if opts.reproducible_seed:
         random.seed(opts.seed)
         torch.manual_seed(opts.seed)
-
-    for epoch in range(opts.epoch_start, opts.epoch_start + opts.n_epochs):
+    snapshots = []
+    for epoch in range(opts.epoch_start + 1, opts.epoch_start + opts.n_epochs + 1):
         start = time.perf_counter()
         try:
             score = train_epoch(
@@ -81,7 +65,12 @@ def evaluate_with_encoder(opts, encoder, logger: Logger, osobnik_id = None):
                 score=score,
                 time=end-start
         )
-    return score
+        if epoch in snapshots_epochs:
+            snapshot = model.state_dict()
+            snapshots.append(snapshot)
+            filename = os.path.join(opts.save_dir, f'snapshot_osobnik{osobnik_id}_epoch{epoch}.pth')
+            torch.save(snapshot, filename)
+    return EvaluationResult(score, snapshots)
 
 def validate(model, dataset, opts):
     cost = rollout(model, dataset, opts)

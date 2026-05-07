@@ -11,47 +11,8 @@ from learning.cgp import GenomeFactory, CGP_Net
 from learning.encoders.graph_encoder import GraphAttentionEncoder
 from learning.reinforce_baselines import RolloutBaseline, WarmupBaseline
 from learning.problem_vrp import CVRP
-from utils.training import evaluate, evaluate_with_encoder
+from utils.training import evaluate 
 from utils.logger import Logger
-
-def benchmark_execution_time(opts, logger: Logger, vrp_sizes = [10, 20, 50, 100]):
-    baseline = GenomeFactory().produce_genome([ (4,), (5, -2), (1,), (6, 1), (7,), (6, -1), (5, -4),  (1,)]*3)
-    osobnik_id = 0
-    for vrp_size in vrp_sizes:
-        opts.graph_size = vrp_size
-        evaluate(opts, baseline, osobnik_id=osobnik_id)
-        osobnik_id += 1
-    logger.save_csv("execution_times.csv")
-
-def verify_sanity(opts, logger: Logger):
-    opts.n_epochs = 1
-    opts.epoch_size = 12800
-    baseline = GenomeFactory().produce_genome([ (4,), (5, -2), (1,), (6, 1), (7,), (6, -1), (5, -4),  (1,)]*3)
-    random.seed(opts.seed)
-    torch.manual_seed(opts.seed)
-    original_encoder = GraphAttentionEncoder(
-        n_heads=opts.n_heads,
-        embed_dim=opts.embedding_dim,
-        n_layers=opts.n_encode_layers,
-        normalization=opts.normalization
-    )
-    random.seed(opts.seed)
-    torch.manual_seed(opts.seed)
-    my_encoder = baseline.build_nn(opts)
-    score_orig_encoder = evaluate_with_encoder(opts, my_encoder, logger, osobnik_id=0)
-    random.seed(opts.seed)
-    torch.manual_seed(opts.seed)
-    original_encoder = GraphAttentionEncoder(
-        n_heads=opts.n_heads,
-        embed_dim=opts.embedding_dim,
-        n_layers=opts.n_encode_layers,
-        normalization=opts.normalization
-    )
-    score_genetic_encoder = evaluate_with_encoder(opts, original_encoder, logger, osobnik_id=1)
-    if score_orig_encoder != score_genetic_encoder:
-        print("CARAMBA!")
-    else:
-        print("All good boss")
 
 def cgp(opts, logger: Logger, parent=None, generations=None):
     opts.validation_set = CVRP.make_dataset(size=opts.graph_size, num_samples=opts.val_size)
@@ -89,44 +50,6 @@ def cgp(opts, logger: Logger, parent=None, generations=None):
         logger.record(key="evolution", generation=generation, genome=parent.genes, score=parent.score)
         generation += 1
 
-def test_single_chromosome(opts, logger, genes, osobnik_id=None):
-    genome = GenomeFactory().produce_genome(genes)
-    evaluate(opts, genome, logger=logger, osobnik_id=osobnik_id)
-
-def test_chromosomes(opts, logger, genes):
-    opts.validation_set = CVRP.make_dataset(size=opts.graph_size, num_samples=opts.val_size)
-    factory = GenomeFactory()
-    osobnik_id = 0
-    for gene in genes:
-        evaluate(opts, factory.produce_genome(gene), logger=logger, osobnik_id=osobnik_id)
-        osobnik_id += 1
-
-def test_random_chromosomes(opts, logger):
-    opts.validation_set = CVRP.make_dataset(size=opts.graph_size, num_samples=opts.val_size)
-    factory = GenomeFactory()
-    genome = genome = factory.get_random_genome(50, 10)
-    osobnik_id = 0
-    while True:
-        score = evaluate(opts, genome, logger=logger, osobnik_id=osobnik_id)
-        logger.record(key="randomization", osobnik_id=osobnik_id, genome=genome.genes, score=score)
-        osobnik_id += 1
-        genome = factory.get_random_genome(50, 10)
-        print(genome.genes)
-
-def benchmark_random_chromosomes(opts, logger, length, n = 10):
-    opts.validation_set = CVRP.make_dataset(size=opts.graph_size, num_samples=opts.val_size)
-    factory = GenomeFactory()
-    #baseline = factory.produce_genome([ (4,), (5, -2), (1,), (6, 1), (7,), (6, -1), (5, -4),  (1,)]*3) # baseline
-    #logger.record(key="children", osobnik_id=0, genome=chromosomes[-1])
-    osobnik_id = 0
-    while osobnik_id < n:
-        genome = factory.get_random_genome(length)
-        score = evaluate(opts, genome, logger=logger, osobnik_id=osobnik_id)
-        if not score:
-            continue
-        logger.record(key="genomes", osobnik_id=osobnik_id, score=score, genome=genome.genes)
-        osobnik_id += 1
-
 def initial_setup(opts):
     random.seed(opts.seed)
     torch.manual_seed(opts.seed)
@@ -135,59 +58,24 @@ def initial_setup(opts):
 def run(opts):
     initial_setup(opts)
     logger = Logger(opts)
-    # opts.n_epochs = 10
-    # opts.epoch_size = 128000
-    # opts.validation_set = CVRP.make_dataset(size=opts.graph_size, num_samples=opts.val_size)
-    #genome = [(2,), (1,), (9,), (9,), (9,), (8,), (5, -8), (1,), (3,), (5, -1), (5, -8), (9,), (9,), (9,), (1,), (1,), (6, 0), (6, 0), (6, -1), (9,), (8,), (6, 1), (2,), (1,), (1,), (5, -18)]
-    # baseline = [ (4,), (5, -2), (1,), (6, 1), (7,), (6, -1), (5, -4),  (1,)]
-    # baseline = [(4,), (7,)]
-    # opts.reproducible_seed = True
-    # opts.n_epochs = 5
-    # opts.epoch_size = 12800
-    # for i in range(5):
-    #     test_single_chromosome(opts, logger, baseline, i)
-
 
     opts.reproducible_seed = False
     opts.n_epochs = 5
     opts.epoch_size = 12800
-    baseline = [ (4,0), (5,(0,9),), (2,10), (3,11,1), (7,12), (3,13,-1), (5,(10, 14),),  (2,15)]
+    baseline = [ (4,0), (5,(0,9),), (2,10), (3,11,1), (7,12), (3,13,-1), (5,(10, 14),), (2,15)]
     x_dim = len(baseline)
-    genome = [*[None]*x_dim,
+    genome = [*baseline,
              *baseline,
-             *[None]*x_dim]
+             *baseline,]
     outputs = [16]
-
-    # for i in range(5, 10):
     encoder = CGP_Net(opts.embedding_dim, x_dim, 3, outputs, genome=genome)
-    base_snapshot = encoder.save_snapshot()
-    children = encoder.produce_offspring(5, 0)
-    opts.n_epochs = 10
-    opts.epoch_size = 12800
-    evaluate_with_encoder(opts, encoder, logger, 0)
-    snapshot = encoder.save_snapshot()
-    children[0].load_snapshot(base_snapshot)
-    evaluate_with_encoder(opts, children[0], logger, 1)
-    children[1].load_snapshot(base_snapshot)
-    evaluate_with_encoder(opts, children[1], logger, 2)
-    #evaluate_with_encoder(opts, encoder, logger, 0)
-    # for i in range(5):
-    #     evaluate_with_encoder(opts, children[i], logger, i + 1)
-
-
-
-
-import ast
-def load_genomes(file_path):
-    result = []
-    with open(file_path, 'r') as f:
-        for line in f:
-            line = line.strip()
-            if line:  # skip empty lines
-                parsed = ast.literal_eval(line)
-                result.append(parsed)
+    model = AttentionModel(opts, encoder)
     
-    return result
+    opts.n_epochs = 5
+    #model.load_weights('/home/piotr/repos/magisterka/outputs/run_20260507T142017/snapshot_osobnik0_epoch5.pth')
+    evaluate(opts, model, logger, 0,)
+    #evaluate(opts, model, logger, 0, snapshots_epochs=[5, 10, 15])
+
 
 if __name__ == "__main__":
     run(get_options())
