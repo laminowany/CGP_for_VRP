@@ -8,8 +8,6 @@ import random
 
 from tqdm import tqdm
 from torch.utils.data import DataLoader
-from learning.attention_model import AttentionModel
-from learning.cgp import Genome
 from learning.reinforce_baselines import RolloutBaseline, WarmupBaseline
 from utils.logger import Logger
 from utils.misc import move_to

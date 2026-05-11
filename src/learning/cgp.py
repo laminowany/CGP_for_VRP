@@ -2,7 +2,7 @@ import math
 import torch
 import random
 import time 
-from collections import deque
+from collections import defaultdict, deque
 from dataclasses import dataclass
 
 from torch import nn
@@ -149,26 +149,40 @@ class Normalization(nn.Module):
             assert self.normalizer is None, "Unknown normalizer type"
             return input
     
-class Add_legacy(nn.Module):
-    """Simple adding for making skip connection possible"""
-    def __init__(self):
-        super(Add_legacy, self).__init__()
-
-    def forward(self, x, skip):
-        if x.shape[-1] != skip.shape[-1]:
-            proj = nn.Linear(skip.shape[-1], x.shape[-1]).to(x.device)
-            skip = proj(skip)
-        return x + skip
-
 class Add(nn.Module):
     """Simple adding for making skip connection possible"""
-    def __init__(self):
+    def __init__(self, input_dims, embed_dim):
         super(Add, self).__init__()
+        self.embed_dim = embed_dim
 
-    def forward(self, x):
-        return x[0] + x[1]
+        self.projections = nn.ModuleList([
+            nn.Linear(dim, embed_dim)
+            if dim != embed_dim
+            else nn.Identity()
+            for dim in input_dims
+        ])
 
+    # def forward(self, xs):
+    #     projected = [ proj(x) for x, proj in zip(xs, self.projections) ]
+    #     return sum(projected)
+    def forward(self, xs):
+        assert len(xs) >= 2, "Add requires at least 2 tensors"
 
+        base_shape = xs[0].shape
+
+        for i, x in enumerate(xs[1:], 1):
+            assert x.shape == base_shape, (
+                f"Shape mismatch in Add: "
+                f"xs[0]={base_shape}, xs[{i}]={x.shape}"
+            )
+
+        out = xs[0]
+        #print(f"ADDING = {out.flatten()[0].item():.4f}")
+        for x in xs[1:]:
+            #print(f"ADDING = {x.flatten()[0].item():.4f}")
+            out = out + x
+
+        return out
 @dataclass
 class Gene:
     pos: int
@@ -219,15 +233,16 @@ class CGP_Net(nn.Module):
         self.feed_forward_hidden = 512
         self.x_dim = x_dim
         self.y_dim = y_dim
-        self.len = self.x_dim * self.y_dim + 1
+        self.len = self.x_dim * self.y_dim + 2
         self.embed_dim = embed_dim
         self.outputs = outputs
         if genome:
-            self.genes = parse_genes([None, *genome])
+            self.genes = parse_genes([None, *genome, None])
         elif genes:
             self.genes = genes
         else:
             self.genes = [None]*self.len
+        self.genes[self.len - 1] = parse_gene((5, tuple(outputs)), self.len-1)
         if nets:
             self.nets = nets
             for pos, net in enumerate(self.nets):
@@ -241,7 +256,7 @@ class CGP_Net(nn.Module):
                     if not self.genes[idx]:
                         continue
                     self.nets[idx] = self.produce_gene(self.genes[idx])
-        
+            self.nets[self.len - 1] = self.produce_gene(self.genes[self.len - 1])
         assert len(self.genes) == self.len
         assert len(self.nets) == self.len
         self.mark_active_paths()
@@ -256,39 +271,117 @@ class CGP_Net(nn.Module):
     def forward(self, x):
         outputs = [None]*self.len
         outputs[0] = x    
+        
+        # print("\n========== CGP FORWARD ==========")
+        # print(
+        #     f"[INPUT] "
+        #     f"shape={x.shape} "
+        #     f"mean={x.mean().item():.4f} "
+        #     f"std={x.std().item():.4f} "
+        #     f"first={x.flatten()[0].item():.4f}"
+        # )
         for idx in self.propagation_order:
+            if idx == 0:
+                continue
             inputs = self.genes[idx].inputs
             in_vals = [outputs[i] for i in inputs]
-            if len(in_vals) == 1:
+            if self.genes[idx].type == 5:
+                outputs[idx] = self.nets[idx].nn(in_vals)
+                #print(f'pos: {idx}, inputs: {self.genes[idx].inputs}')
+            elif len(in_vals) == 1:
                 outputs[idx] = self.nets[idx].nn(in_vals[0])
             else:
                 outputs[idx] = self.nets[idx].nn(in_vals)
+            # out = outputs[idx] 
+            # if isinstance(out, torch.Tensor):
+            #     print(
+            #         f"TYP {self.genes[idx].type} output "
+            #         f"shape={out.shape} "
+            #         f"mean={out.mean().item():.4f} "
+            #         f"std={out.std().item():.4f} "
+            #         f"first={out.flatten()[0].item():.4f}"
+            #     )
 
-        final_h = outputs[self.outputs[0]]
+            #     if torch.isnan(out).any():
+            #         print(" !!! NAN DETECTED !!! ")
+
+            # else:
+            #     print(f" output type={type(out)}")
+
+        outputs[self.len-1] = outputs[47]
+        final_h = outputs[self.len-1]
         graph_embedding = final_h.mean(dim=1)
+        
+        # print("\n========== FINAL ==========")
+
+        # print(
+        #     f"final_h "
+        #     f"shape={final_h.shape} "
+        #     f"mean={final_h.mean().item():.4f} "
+        #     f"std={final_h.std().item():.4f} "
+        # )
+
+        graph_embedding = final_h.mean(dim=1)
+
+        # print(
+        #     f"graph_embedding "
+        #     f"shape={graph_embedding.shape} "
+        #     f"mean={graph_embedding.mean().item():.4f} "
+        #     f"std={graph_embedding.std().item():.4f} "
+        #     f"norm={graph_embedding.norm().item():.4f}"
+        # )
+
+        # print("=================================\n")
         return (final_h, graph_embedding)
 
     def mark_active_paths(self):
-        active_paths = []
         visited = set()
         queue = deque()
-        queue.extend(self.outputs)
+        queue.append(self.len - 1)
 
         while queue:
             pos = queue.popleft()
-            if pos == 0:
+            if pos == 0 or pos in visited:
                 continue
             self.nets[pos].active  = True
+            visited.add(pos)
             queue.extend(self.genes[pos].inputs)
 
     def build_propagation_order(self):
-        order =[]
-        for x in range(self.x_dim):
-            for y in range(self.y_dim): 
-                idx = self.to_global_idx(x, y)
-                if self.nets[idx] and self.nets[idx].active:
-                    order.append(idx)
+        graph = defaultdict(list)
+        indeg = defaultdict(int)
+
+        # budujemy dependency graph
+        for i, g in enumerate(self.genes):
+            if g is None:
+                continue
+            for inp in g.inputs:
+                graph[inp].append(i)
+                indeg[i] += 1
+
+        # source node
+        q = deque([0])
+        order = []
+
+        while q:
+            u = q.popleft()
+            order.append(u)
+
+            for v in graph[u]:
+                indeg[v] -= 1
+                if indeg[v] == 0:
+                    q.append(v)
+
         self.propagation_order = order
+    # def build_propagation_order(self):
+    #     order =[]
+    #     for x in range(self.x_dim):
+    #         for y in range(self.y_dim): 
+    #             idx = self.to_global_idx(x, y)
+    #             if self.nets[idx] and self.nets[idx].active:
+    #                 order.append(idx)
+    #     order.append(self.len - 1)
+    #     self.propagation_order = order
         
     def to_global_idx(self, x, y):
         return y*self.x_dim + x + 1
@@ -299,6 +392,7 @@ class CGP_Net(nn.Module):
         return (x, y)
 
     def produce_gene(self, gene: Gene):
+        first_input_dim = self.embed_dim
         if gene.inputs[0] == 0:
             first_input_dim = self.embed_dim
         else:
@@ -310,7 +404,7 @@ class CGP_Net(nn.Module):
             net = Normalization(first_input_dim)
         elif gene.type == 3:
             scaling = gene.args[0]
-            if scaling == 1:
+            if scaling == 1 and first_input_dim <= 2048:
                 output_dim = first_input_dim * 4
                 net = nn.Linear(first_input_dim, output_dim)
             elif scaling == -1 and first_input_dim >= 8:
@@ -321,7 +415,16 @@ class CGP_Net(nn.Module):
         elif gene.type == 4:
             net = MultiHeadAttention(self.num_heads, first_input_dim, first_input_dim)
         elif gene.type == 5:
-            net = Add()
+            if len(gene.inputs) == 1:
+                gene.type = 1
+                net = nn.Identity()
+            else:
+                input_dims = [
+                    self.nets[i].dim
+                    for i in gene.inputs
+                ]
+                net = Add(input_dims, self.embed_dim)
+                output_dim = self.embed_dim
         elif gene.type == 6:
             net = nn.GELU()
         elif gene.type == 7:
@@ -382,179 +485,3 @@ class CGP_Net(nn.Module):
             else:
                 return self.spawn_gene(i)
     
-
-# 1 - Normalization
-# 2 - MultiHeadAttention
-# 3 - Identity
-# 4 - MultiHeadAttention
-# 5 - Add ze Skipem
-# 6 - Linear scaling
-# 7 - Relu
-# 8 - Gelu
-# 9 - LayerNorm
-
-class Genome():
-    _id_counter = 0 
-
-    def __init__(self, genes):
-        self.id = Genome._id_counter
-        Genome._id_counter += 1
-        self.genes = genes
-        self.score = None
-    
-    def build_nn(self, opts):
-        return GenomeNN(self.genes, opts)
-    
-
-class GenomeNN(nn.Module):
-    def __init__(self, genes, opts):
-        super().__init__()
-        self.num_heads = 8
-        self.feed_forward_hidden = 512
-        self.genes = genes
-        self.layers = nn.ModuleList()
-        embed_dim = opts.embedding_dim
-        current_dim = embed_dim
-        for gene in self.genes:
-            layer_type = gene[0]
-            if layer_type == 1:
-                layer = Normalization(current_dim)
-            elif layer_type == 2:
-                layer = nn.Sequential (SkipConnection(
-                    MultiHeadAttention(
-                        self.num_heads,
-                        input_dim=current_dim,
-                        embed_dim=current_dim
-                    )
-                ))
-            elif layer_type == 3:
-                # layer =  SkipConnection(
-                #     nn.Sequential(
-                #         nn.Linear(embed_dim, self.feed_forward_hidden ),
-                #         nn.ReLU(),
-                #         nn.Linear(self.feed_forward_hidden , embed_dim)
-                #     )
-                # )
-                layer = nn.Identity()
-            elif layer_type == 4:
-                layer = MultiHeadAttention(
-                    self.num_heads,
-                    input_dim=current_dim,
-                    embed_dim=current_dim
-                )
-            elif layer_type == 5:
-                layer = Add_legacy()
-            elif layer_type == 6:
-                scaling = gene[1]
-                if scaling == 1: # scale up
-                    layer = nn.Linear(current_dim, current_dim*4)
-                    current_dim *= 4
-                elif scaling == -1 and current_dim >= 8: # scale down
-                    layer = nn.Linear(current_dim, current_dim // 4)
-                    current_dim //= 4
-                else: # keep dim
-                    layer = nn.Linear(current_dim, current_dim)
-            elif layer_type == 7:
-                layer = nn.ReLU()
-            elif layer_type == 8:
-                layer = nn.GELU()
-            elif layer_type == 9:
-                layer = nn.LayerNorm(current_dim)
-            self.layers.append(layer)
-
-        if current_dim != embed_dim: # repair
-            self.layers.append(nn.Linear(current_dim, embed_dim))
-            if current_dim < embed_dim:
-                self.genes.append((6,1))
-            else:
-                self.genes.append((6,-1))
-    
-    def forward(self, x):
-        outputs = [x]
-    
-        for i, gene in enumerate(self.genes):
-            layer_type = gene[0]
-            layer = self.layers[i]
-            inp = outputs[-1]
-
-            if layer_type == 5:
-                skip_rel = gene[1] + 1
-                skip_idx = i + skip_rel
-                out = layer(inp, outputs[skip_idx])
-            else:
-                out = layer(inp)
-            
-            outputs.append(out)
-
-        final_h = outputs[-1]
-        graph_embedding = final_h.mean(dim=1)
-        return (final_h, graph_embedding)
-
-
-class GenomeFactory:
-    def produce_genome(self, genes):
-        return Genome(genes)
-
-    def get_random_genome(self, length=7, deviation=3):
-        length = length + random.randint(-deviation, deviation)
-        genome = []
-        for i in range(length):
-            genome.append(self.spawn_gene(i))
-        return Genome(genome)
-    
-    def spawn_gene(self, i):
-        layer_type = random.randint(1, 9)   
-        if layer_type == 5:
-            skip_from = random.randint(1, i + 1)
-            return (layer_type, -skip_from)
-        elif layer_type == 6:
-            return (layer_type, random.randint(-1, 1))
-        else:
-            return (layer_type,)
-    
-    def mutate(self, genome, p_mut=0.1, p_struct=0.2):
-        random.seed(time.time())
-        new_genes = list(genome.genes)
-
-        # 🔴 1. mutacja genów
-        for i in range(len(new_genes)):
-            if random.random() < p_mut:
-                new_genes[i] = self.mutate_gene(new_genes[i], i)
-
-        # 🔵 2. mutacja strukturalna (czasami)
-        if random.random() < p_struct:
-            new_genes = self.structural_mutation(new_genes)
-        
-        return Genome(new_genes)
-
-    def mutate_gene(self, gene, i):
-        layer_type = gene[0]
-        mutation_type = random.choice(["type", "param"])
-
-        # zmiana typu
-        if mutation_type == "type":
-            return self.spawn_gene(i)
-
-        # zmiana parametru
-        else:
-            if layer_type == 5:
-                skip_from = skip_from = random.randint(1, i + 1)
-                return (5, -skip_from)
-            elif layer_type == 6:
-                return (6, random.randint(-1, 1))
-            else:
-                return self.spawn_gene(i)
-    
-    def structural_mutation(self, genes):
-        op = random.choice(["add", "remove"])
-
-        if op == "add" and len(genes) < 50:
-            i = random.randint(0, len(genes))
-            new_gene = self.spawn_gene(i)
-            genes.insert(i, new_gene)
-
-        elif op == "remove" and len(genes) > 3:
-            i = random.randint(0, len(genes) - 1)
-            genes.pop(i)
-
-        return genes

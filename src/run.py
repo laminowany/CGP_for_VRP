@@ -5,76 +5,117 @@ import torch
 import torch.optim as optim
 import random
 
+from legacy import GenomeFactory
 from utils.process import get_options
 from learning.attention_model import AttentionModel
-from learning.cgp import GenomeFactory, CGP_Net
+from learning.cgp import CGP_Net
 from learning.encoders.graph_encoder import GraphAttentionEncoder
 from learning.reinforce_baselines import RolloutBaseline, WarmupBaseline
 from learning.problem_vrp import CVRP
 from utils.training import evaluate 
 from utils.logger import Logger
 
-def cgp(opts, logger: Logger, parent=None, generations=None):
-    opts.validation_set = CVRP.make_dataset(size=opts.graph_size, num_samples=opts.val_size)
-    opts.n_epochs = 5
-    opts.epoch_size = 128000
-    factory = GenomeFactory()
-    lambda_ = 4
-    osobnik_id = 0
-    if not parent:
-        parent = factory.produce_genome([ (4,), (5, -2), (1,), (6, 1), (7,), (6, -1), (5, -4),  (1,)]*3) # baseline
-    # parent = factory.get_random_genome(25, 0)
-    parent.score = evaluate(opts, parent, logger=logger, osobnik_id=osobnik_id)
-    print(f'genome:  {parent.genes}')
-    print(f"gen -1 best score: {parent.score}")
-    generation = 0
-    evaluated_cache = {}
-    while generation is None or generation <= generations:
-        best = parent
-        child = factory.mutate(parent)
-
-        for _ in range(lambda_):
-            osobnik_id += 1
-            child = factory.mutate(parent)
-            if tuple(child.genes) in evaluated_cache:
-                child.score = evaluated_cache[tuple(child.genes)]
-            else:
-                child.score = evaluate(opts, child, logger=logger, osobnik_id=osobnik_id)
-                evaluated_cache[tuple(child.genes)] = child.score
-            logger.record(key="children", osobnik_id=osobnik_id, genome=child.genes, score=child.score)
-            if child.score and child.score <= best.score:
-                best = child
-                parent = best
-        parent = best
-        print(f"gen {generation} | best score: {parent.score}")    
-        logger.record(key="evolution", generation=generation, genome=parent.genes, score=parent.score)
-        generation += 1
-
 def initial_setup(opts):
+    os.makedirs(opts.save_dir)
+    reset_seeds(opts)
+    
+def reset_seeds(opts):
     random.seed(opts.seed)
     torch.manual_seed(opts.seed)
-    os.makedirs(opts.save_dir)
+    
+def produce_reference(row, times):
+    idx = (row - 1) * 8 * times
+    res = []
+    init = 0
+    for t in range(times):
+        res.append((4, init))
+        idx += 1
+        res.append((5, (init, idx)))
+        idx += 1
+        res.append((2, idx))
+        idx += 1
+        res.append((3, idx, 1))
+        idx += 1
+        res.append((7, idx))
+        idx += 1
+        res.append((3, idx, -1))
+        idx += 1
+        res.append((5, (idx - 3, idx)))
+        idx += 1
+        res.append((2, idx))
+        idx += 1
+        init = idx
+    return res    
+    
+
+def verify_sanity(opts, logger: Logger):
+    opts.n_epochs = 100
+    opts.epoch_size = 128000
+
+    # reset_seeds(opts)
+    # baseline = GenomeFactory().produce_genome([ (4,), (5, -2), (1,), (6, 1), (7,), (6, -1), (5, -4),  (1,)]*3)
+    # my_encoder = baseline.build_nn(opts)
+    # model1 = AttentionModel(opts, my_encoder)
+    # score_orig_encoder = evaluate(opts, model1, logger, osobnik_id=0)
+    
+    reset_seeds(opts)
+    original_encoder = GraphAttentionEncoder(
+        n_heads=opts.n_heads,
+        embed_dim=opts.embedding_dim,
+        n_layers=opts.n_encode_layers,
+        normalization=opts.normalization
+    )
+    model2 = AttentionModel(opts, original_encoder)
+    score_genetic_encoder = evaluate(opts, model2, logger, osobnik_id=1)
+    
+    reset_seeds(opts)
+    baseline = produce_reference(2, 3)
+    x_dim = len(baseline)
+    genome = [*[None]*x_dim,
+             *baseline,
+             *[None]*x_dim,]
+    outputs = [48]
+    encoderCGP = CGP_Net(opts.embedding_dim, x_dim, 3, outputs, genome=genome)
+    model3 = AttentionModel(opts, encoderCGP)
+    score_cgp = evaluate(opts, model3, logger, osobnik_id=2)
+    
+    # if score_orig_encoder != score_genetic_encoder:
+    #     print("CARAMBA!")
+    # else:
+    #     print("All good boss")
+
 
 def run(opts):
     initial_setup(opts)
     logger = Logger(opts)
+    opts.validation_set = CVRP.make_dataset(size=opts.graph_size, num_samples=opts.val_size)
+    verify_sanity(opts, logger)
+    return
 
     opts.reproducible_seed = False
-    opts.n_epochs = 5
-    opts.epoch_size = 12800
-    baseline = [ (4,0), (5,(0,9),), (2,10), (3,11,1), (7,12), (3,13,-1), (5,(10, 14),), (2,15)]
+    #opts.graph_size = 50
+    #opts.n_epochs = 5
+    #opts.epoch_size = 128000
+    #baseline = [ (4,0), (5,(0,9),), (2,10), (3,11,1), (7,12), (3,13,-1), (5,(10, 14),), (2,15)]*3
+    baseline = produce_reference(2, 3)
     x_dim = len(baseline)
-    genome = [*baseline,
+    genome = [*[None]*x_dim,
              *baseline,
-             *baseline,]
-    outputs = [16]
+             *[None]*x_dim,]
+    outputs = [48]
     encoder = CGP_Net(opts.embedding_dim, x_dim, 3, outputs, genome=genome)
-    model = AttentionModel(opts, encoder)
+    original_encoder = GraphAttentionEncoder(
+        n_heads=opts.n_heads,
+        embed_dim=opts.embedding_dim,
+        n_layers=opts.n_encode_layers,
+        normalization=opts.normalization
+    )
+    model = AttentionModel(opts, original_encoder)
     
-    opts.n_epochs = 5
+    #opts.n_epochs = 5
     #model.load_weights('/home/piotr/repos/magisterka/outputs/run_20260507T142017/snapshot_osobnik0_epoch5.pth')
-    evaluate(opts, model, logger, 0,)
-    #evaluate(opts, model, logger, 0, snapshots_epochs=[5, 10, 15])
+    #evaluate(opts, model, logger, 0,)
+    evaluate(opts, model, logger, 0, snapshots_epochs=list(range(5, 101, 5)))
 
 
 if __name__ == "__main__":
