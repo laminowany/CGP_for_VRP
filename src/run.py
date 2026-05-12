@@ -49,24 +49,24 @@ def produce_reference(row, times):
     
 
 def verify_sanity(opts, logger: Logger):
-    opts.n_epochs = 100
-    opts.epoch_size = 128000
+    opts.n_epochs = 5
+    opts.epoch_size = 12800
 
-    # reset_seeds(opts)
-    # baseline = GenomeFactory().produce_genome([ (4,), (5, -2), (1,), (6, 1), (7,), (6, -1), (5, -4),  (1,)]*3)
-    # my_encoder = baseline.build_nn(opts)
-    # model1 = AttentionModel(opts, my_encoder)
-    # score_orig_encoder = evaluate(opts, model1, logger, osobnik_id=0)
-    
     reset_seeds(opts)
-    original_encoder = GraphAttentionEncoder(
-        n_heads=opts.n_heads,
-        embed_dim=opts.embedding_dim,
-        n_layers=opts.n_encode_layers,
-        normalization=opts.normalization
-    )
-    model2 = AttentionModel(opts, original_encoder)
-    score_genetic_encoder = evaluate(opts, model2, logger, osobnik_id=1)
+    baseline = GenomeFactory().produce_genome([ (4,), (5, -2), (1,), (6, 1), (7,), (6, -1), (5, -4),  (1,)]*3)
+    my_encoder = baseline.build_nn(opts)
+    model1 = AttentionModel(opts, my_encoder)
+    score_orig_encoder = evaluate(opts, model1, logger, osobnik_id=0)
+    
+    # reset_seeds(opts)
+    # original_encoder = GraphAttentionEncoder(
+    #     n_heads=opts.n_heads,
+    #     embed_dim=opts.embedding_dim,
+    #     n_layers=opts.n_encode_layers,
+    #     normalization=opts.normalization
+    # )
+    # model2 = AttentionModel(opts, original_encoder)
+    # score_genetic_encoder = evaluate(opts, model2, logger, osobnik_id=1)
     
     reset_seeds(opts)
     baseline = produce_reference(2, 3)

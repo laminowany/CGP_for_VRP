@@ -156,8 +156,8 @@ class Add(nn.Module):
         if x.shape[-1] != skip.shape[-1]:
             proj = nn.Linear(skip.shape[-1], x.shape[-1]).to(x.device)
             skip = proj(skip)
-        print(f"ADDING = {skip.flatten()[0].item():.4f}")
-        print(f"ADDING = {x.flatten()[0].item():.4f}")
+        # print(f"ADDING = {skip.flatten()[0].item():.4f}")
+        # print(f"ADDING = {x.flatten()[0].item():.4f}")
 
         return x + skip
 
@@ -247,13 +247,13 @@ class GenomeNN(nn.Module):
                 self.genes.append((6,-1))
     
     def forward(self, x):
-        print("\n===== FORWARD =====")
-        print(
-            f"input: shape={x.shape} "
-            f"mean={x.mean().item():.4f} "
-            f"std={x.std().item():.4f} "
-            f"first={x.flatten()[0].item():.4f}"
-        )
+        # print("\n===== FORWARD =====")
+        # print(
+        #     f"input: shape={x.shape} "
+        #     f"mean={x.mean().item():.4f} "
+        #     f"std={x.std().item():.4f} "
+        #     f"first={x.flatten()[0].item():.4f}"
+        # )
 
 
         outputs = [x]
@@ -269,29 +269,29 @@ class GenomeNN(nn.Module):
                 out = layer(inp, outputs[skip_idx])
             else:
                 out = layer(inp)
-            print(
-                f"TYP {layer_type} output shape: {out.shape} "
-                f"mean={out.mean().item():.4f} "
-                f"std={out.std().item():.4f} "
-                f"first={out.flatten()[0].item():.4f}"
-            )
+            # print(
+            #     f"TYP {layer_type} output shape: {out.shape} "
+            #     f"mean={out.mean().item():.4f} "
+            #     f"std={out.std().item():.4f} "
+            #     f"first={out.flatten()[0].item():.4f}"
+            # )
             outputs.append(out)
 
         final_h = outputs[-1]
         graph_embedding = final_h.mean(dim=1)
-        print("\n===== FINAL =====")
-        print(
-            f"final_h shape={final_h.shape} "
-            f"mean={final_h.mean().item():.4f} "
-            f"std={final_h.std().item():.4f}"
-        )
-        print(
-            f"graph_embedding "
-            f"shape={graph_embedding.shape} "
-            f"mean={graph_embedding.mean().item():.4f} "
-            f"std={graph_embedding.std().item():.4f} "
-            f"norm={graph_embedding.norm().item():.4f}"
-        )
+        # print("\n===== FINAL =====")
+        # print(
+        #     f"final_h shape={final_h.shape} "
+        #     f"mean={final_h.mean().item():.4f} "
+        #     f"std={final_h.std().item():.4f}"
+        # )
+        # print(
+        #     f"graph_embedding "
+        #     f"shape={graph_embedding.shape} "
+        #     f"mean={graph_embedding.mean().item():.4f} "
+        #     f"std={graph_embedding.std().item():.4f} "
+        #     f"norm={graph_embedding.norm().item():.4f}"
+        # )
 
         return (final_h, graph_embedding)
 

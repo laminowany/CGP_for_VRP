@@ -162,27 +162,27 @@ class Add(nn.Module):
             for dim in input_dims
         ])
 
-    # def forward(self, xs):
-    #     projected = [ proj(x) for x, proj in zip(xs, self.projections) ]
-    #     return sum(projected)
     def forward(self, xs):
-        assert len(xs) >= 2, "Add requires at least 2 tensors"
+        projected = [ proj(x) for x, proj in zip(xs, self.projections) ]
+        return sum(projected)
+    # def forward(self, xs):
+    #     assert len(xs) >= 2, "Add requires at least 2 tensors"
 
-        base_shape = xs[0].shape
+    #     base_shape = xs[0].shape
 
-        for i, x in enumerate(xs[1:], 1):
-            assert x.shape == base_shape, (
-                f"Shape mismatch in Add: "
-                f"xs[0]={base_shape}, xs[{i}]={x.shape}"
-            )
+    #     for i, x in enumerate(xs[1:], 1):
+    #         assert x.shape == base_shape, (
+    #             f"Shape mismatch in Add: "
+    #             f"xs[0]={base_shape}, xs[{i}]={x.shape}"
+    #         )
 
-        out = xs[0]
-        #print(f"ADDING = {out.flatten()[0].item():.4f}")
-        for x in xs[1:]:
-            #print(f"ADDING = {x.flatten()[0].item():.4f}")
-            out = out + x
+    #     out = xs[0]
+    #     #print(f"ADDING = {out.flatten()[0].item():.4f}")
+    #     for x in xs[1:]:
+    #         #print(f"ADDING = {x.flatten()[0].item():.4f}")
+    #         out = out + x
 
-        return out
+    #     return out
 @dataclass
 class Gene:
     pos: int
@@ -292,7 +292,7 @@ class CGP_Net(nn.Module):
                 outputs[idx] = self.nets[idx].nn(in_vals[0])
             else:
                 outputs[idx] = self.nets[idx].nn(in_vals)
-            # out = outputs[idx] 
+            out = outputs[idx] 
             # if isinstance(out, torch.Tensor):
             #     print(
             #         f"TYP {self.genes[idx].type} output "
@@ -308,7 +308,7 @@ class CGP_Net(nn.Module):
             # else:
             #     print(f" output type={type(out)}")
 
-        outputs[self.len-1] = outputs[47]
+        # outputs[self.len-1] = outputs[47]
         final_h = outputs[self.len-1]
         graph_embedding = final_h.mean(dim=1)
         
@@ -347,41 +347,41 @@ class CGP_Net(nn.Module):
             visited.add(pos)
             queue.extend(self.genes[pos].inputs)
 
-    def build_propagation_order(self):
-        graph = defaultdict(list)
-        indeg = defaultdict(int)
-
-        # budujemy dependency graph
-        for i, g in enumerate(self.genes):
-            if g is None:
-                continue
-            for inp in g.inputs:
-                graph[inp].append(i)
-                indeg[i] += 1
-
-        # source node
-        q = deque([0])
-        order = []
-
-        while q:
-            u = q.popleft()
-            order.append(u)
-
-            for v in graph[u]:
-                indeg[v] -= 1
-                if indeg[v] == 0:
-                    q.append(v)
-
-        self.propagation_order = order
     # def build_propagation_order(self):
-    #     order =[]
-    #     for x in range(self.x_dim):
-    #         for y in range(self.y_dim): 
-    #             idx = self.to_global_idx(x, y)
-    #             if self.nets[idx] and self.nets[idx].active:
-    #                 order.append(idx)
-    #     order.append(self.len - 1)
+    #     graph = defaultdict(list)
+    #     indeg = defaultdict(int)
+
+    #     # budujemy dependency graph
+    #     for i, g in enumerate(self.genes):
+    #         if g is None:
+    #             continue
+    #         for inp in g.inputs:
+    #             graph[inp].append(i)
+    #             indeg[i] += 1
+
+    #     # source node
+    #     q = deque([0])
+    #     order = []
+
+    #     while q:
+    #         u = q.popleft()
+    #         order.append(u)
+
+    #         for v in graph[u]:
+    #             indeg[v] -= 1
+    #             if indeg[v] == 0:
+    #                 q.append(v)
+
     #     self.propagation_order = order
+    def build_propagation_order(self):
+        order =[]
+        for x in range(self.x_dim):
+            for y in range(self.y_dim): 
+                idx = self.to_global_idx(x, y)
+                if self.nets[idx] and self.nets[idx].active:
+                    order.append(idx)
+        order.append(self.len - 1)
+        self.propagation_order = order
         
     def to_global_idx(self, x, y):
         return y*self.x_dim + x + 1
