@@ -1,3 +1,4 @@
+import copy
 import math
 import torch
 import random
@@ -165,30 +166,22 @@ class Add(nn.Module):
     def forward(self, xs):
         projected = [ proj(x) for x, proj in zip(xs, self.projections) ]
         return sum(projected)
-    # def forward(self, xs):
-    #     assert len(xs) >= 2, "Add requires at least 2 tensors"
-
-    #     base_shape = xs[0].shape
-
-    #     for i, x in enumerate(xs[1:], 1):
-    #         assert x.shape == base_shape, (
-    #             f"Shape mismatch in Add: "
-    #             f"xs[0]={base_shape}, xs[{i}]={x.shape}"
-    #         )
-
-    #     out = xs[0]
-    #     #print(f"ADDING = {out.flatten()[0].item():.4f}")
-    #     for x in xs[1:]:
-    #         #print(f"ADDING = {x.flatten()[0].item():.4f}")
-    #         out = out + x
-
-    #     return out
+    
 @dataclass
 class Gene:
     pos: int
     type: int
     inputs: list[int]
     args: list[int]
+    active: bool = False
+    
+    def to_genome(self):
+        inputs = self.inputs
+        if len(inputs) == 1:
+            inp_repr = inputs[0]
+        else:
+            inp_repr = tuple(inputs)
+        return (self.type, inp_repr, *self.args)
     
 @dataclass
 class CGP_Element:
@@ -226,60 +219,49 @@ GENE_TYPES_LEN = 7
 
 # (TYP, (INPUTY), (PARAMS))
 class CGP_Net(nn.Module):
-    def __init__(self, embed_dim, x_dim, y_dim, outputs, 
-                 genes=None, nets=None, genome=None):
+    def __init__(self, opts, x_dim, y_dim, genome, outputs):
         super().__init__()
         self.num_heads = 8
         self.feed_forward_hidden = 512
         self.x_dim = x_dim
         self.y_dim = y_dim
         self.len = self.x_dim * self.y_dim + 2
-        self.embed_dim = embed_dim
+        self.opts = opts
+        self.embed_dim = opts.embedding_dim
+        self.debug = opts.debug
         self.outputs = outputs
-        if genome:
-            self.genes = parse_genes([None, *genome, None])
-        elif genes:
-            self.genes = genes
-        else:
-            self.genes = [None]*self.len
+        self.genome = genome
+        
+        self.genes = parse_genes([None, *genome, None])
         self.genes[self.len - 1] = parse_gene((5, tuple(outputs)), self.len-1)
-        if nets:
-            self.nets = nets
-            for pos, net in enumerate(self.nets):
-                if net is not None and net.nn is not None:
-                    self.add_module(f"node_{pos}", net.nn)
-        else:
-            self.nets = [CGP_Element(None, self.embed_dim), *[None] * (self.len-1)]
-            for x in range(self.x_dim):
-                for y in range(self.y_dim):
-                    idx = self.to_global_idx(x, y)
-                    if not self.genes[idx]:
-                        continue
-                    self.nets[idx] = self.produce_gene(self.genes[idx])
-            self.nets[self.len - 1] = self.produce_gene(self.genes[self.len - 1])
+        
+        self.nets = [CGP_Element(None, self.embed_dim), *[None] * (self.len-1)]
+        for x in range(self.x_dim):
+            for y in range(self.y_dim):
+                idx = self.to_global_idx(x, y)
+                if not self.genes[idx]:
+                    continue
+                self.nets[idx] = self.produce_net(self.genes[idx])
+        self.nets[self.len - 1] = self.produce_net(self.genes[self.len - 1])
+        
         assert len(self.genes) == self.len
         assert len(self.nets) == self.len
         self.mark_active_paths()
         self.build_propagation_order()
 
 
-    @classmethod
-    def from_parent(cls, genes, nets, outputs, parent):
-        return CGP_Net(parent.embed_dim, parent.x_dim, parent.y_dim, outputs,
-                       genes=genes, nets=nets)
-
     def forward(self, x):
         outputs = [None]*self.len
         outputs[0] = x    
-        
-        # print("\n========== CGP FORWARD ==========")
-        # print(
-        #     f"[INPUT] "
-        #     f"shape={x.shape} "
-        #     f"mean={x.mean().item():.4f} "
-        #     f"std={x.std().item():.4f} "
-        #     f"first={x.flatten()[0].item():.4f}"
-        # )
+        if self.debug:
+            print("\n========== CGP FORWARD ==========")
+            print(
+                f"[INPUT] "
+                f"shape={x.shape} "
+                f"mean={x.mean().item():.4f} "
+                f"std={x.std().item():.4f} "
+                f"first={x.flatten()[0].item():.4f}"
+            )
         for idx in self.propagation_order:
             if idx == 0:
                 continue
@@ -287,51 +269,44 @@ class CGP_Net(nn.Module):
             in_vals = [outputs[i] for i in inputs]
             if self.genes[idx].type == 5:
                 outputs[idx] = self.nets[idx].nn(in_vals)
-                #print(f'pos: {idx}, inputs: {self.genes[idx].inputs}')
             elif len(in_vals) == 1:
                 outputs[idx] = self.nets[idx].nn(in_vals[0])
             else:
                 outputs[idx] = self.nets[idx].nn(in_vals)
-            out = outputs[idx] 
-            # if isinstance(out, torch.Tensor):
-            #     print(
-            #         f"TYP {self.genes[idx].type} output "
-            #         f"shape={out.shape} "
-            #         f"mean={out.mean().item():.4f} "
-            #         f"std={out.std().item():.4f} "
-            #         f"first={out.flatten()[0].item():.4f}"
-            #     )
+            if self.debug:
+                out = outputs[idx] 
+                if isinstance(out, torch.Tensor):
+                    print(
+                        f"TYP {self.genes[idx].type} output "
+                        f"shape={out.shape} "
+                        f"mean={out.mean().item():.4f} "
+                        f"std={out.std().item():.4f} "
+                        f"first={out.flatten()[0].item():.4f}"
+                    )
 
-            #     if torch.isnan(out).any():
-            #         print(" !!! NAN DETECTED !!! ")
+                    if torch.isnan(out).any():
+                        print(" !!! NAN DETECTED !!! ")
 
-            # else:
-            #     print(f" output type={type(out)}")
-
-        # outputs[self.len-1] = outputs[47]
+                else:
+                    print(f" output type={type(out)}")
         final_h = outputs[self.len-1]
         graph_embedding = final_h.mean(dim=1)
-        
-        # print("\n========== FINAL ==========")
-
-        # print(
-        #     f"final_h "
-        #     f"shape={final_h.shape} "
-        #     f"mean={final_h.mean().item():.4f} "
-        #     f"std={final_h.std().item():.4f} "
-        # )
-
-        graph_embedding = final_h.mean(dim=1)
-
-        # print(
-        #     f"graph_embedding "
-        #     f"shape={graph_embedding.shape} "
-        #     f"mean={graph_embedding.mean().item():.4f} "
-        #     f"std={graph_embedding.std().item():.4f} "
-        #     f"norm={graph_embedding.norm().item():.4f}"
-        # )
-
-        # print("=================================\n")
+        if self.debug:
+            print("\n========== FINAL ==========")
+            print(
+                f"final_h "
+                f"shape={final_h.shape} "
+                f"mean={final_h.mean().item():.4f} "
+                f"std={final_h.std().item():.4f} "
+            )
+            print(
+                f"graph_embedding "
+                f"shape={graph_embedding.shape} "
+                f"mean={graph_embedding.mean().item():.4f} "
+                f"std={graph_embedding.std().item():.4f} "
+                f"norm={graph_embedding.norm().item():.4f}"
+            )
+            print("=================================\n")
         return (final_h, graph_embedding)
 
     def mark_active_paths(self):
@@ -344,35 +319,10 @@ class CGP_Net(nn.Module):
             if pos == 0 or pos in visited:
                 continue
             self.nets[pos].active  = True
+            self.genes[pos].active  = True
             visited.add(pos)
             queue.extend(self.genes[pos].inputs)
 
-    # def build_propagation_order(self):
-    #     graph = defaultdict(list)
-    #     indeg = defaultdict(int)
-
-    #     # budujemy dependency graph
-    #     for i, g in enumerate(self.genes):
-    #         if g is None:
-    #             continue
-    #         for inp in g.inputs:
-    #             graph[inp].append(i)
-    #             indeg[i] += 1
-
-    #     # source node
-    #     q = deque([0])
-    #     order = []
-
-    #     while q:
-    #         u = q.popleft()
-    #         order.append(u)
-
-    #         for v in graph[u]:
-    #             indeg[v] -= 1
-    #             if indeg[v] == 0:
-    #                 q.append(v)
-
-    #     self.propagation_order = order
     def build_propagation_order(self):
         order =[]
         for x in range(self.x_dim):
@@ -387,11 +337,40 @@ class CGP_Net(nn.Module):
         return y*self.x_dim + x + 1
 
     def to_xy(self, pos):
-        x = (pos - 1) // self.x_dim
-        y = (pos / 1 ) % self.x_dim
+        pos -= 1
+        x = pos % self.x_dim
+        y = pos // self.x_dim
         return (x, y)
+    
+    def spawn_random_gene(self, x, y):
+        pos = self.to_global_idx(x, y)
+        type = random.randint(1, GENE_TYPES_LEN)
+        args = []
+        inputs = []
+        
+        possible_inputs = [0]
+        for px in range(x):
+            for py in range(self.y_dim):
+                idx = self.to_global_idx(px, py)
+                possible_inputs.append(idx)
+            
+        prob_input = 1
+        available = possible_inputs.copy()
+        while random.random() < prob_input and available:
+            inp = random.choice(available)
+            inputs.append(inp)
+            available.remove(inp)
+            if type != 5:
+                prob_input = 0
+            else:
+                prob_input *= 0.5
+            
+        if type == 3:
+            args = [random.randint(-1, 1)]
+            
+        return Gene(pos, type, inputs, args)
 
-    def produce_gene(self, gene: Gene):
+    def produce_net(self, gene: Gene):
         first_input_dim = self.embed_dim
         if gene.inputs[0] == 0:
             first_input_dim = self.embed_dim
@@ -415,16 +394,12 @@ class CGP_Net(nn.Module):
         elif gene.type == 4:
             net = MultiHeadAttention(self.num_heads, first_input_dim, first_input_dim)
         elif gene.type == 5:
-            if len(gene.inputs) == 1:
-                gene.type = 1
-                net = nn.Identity()
-            else:
-                input_dims = [
-                    self.nets[i].dim
-                    for i in gene.inputs
-                ]
-                net = Add(input_dims, self.embed_dim)
-                output_dim = self.embed_dim
+            input_dims = [
+                self.nets[i].dim
+                for i in gene.inputs
+            ]
+            net = Add(input_dims, self.embed_dim)
+            output_dim = self.embed_dim
         elif gene.type == 6:
             net = nn.GELU()
         elif gene.type == 7:
@@ -436,25 +411,126 @@ class CGP_Net(nn.Module):
         
         self.add_module(f"node_{gene.pos}", net)
         return CGP_Element(net, output_dim)
-
-    def produce_offspring(self, n, p_mut=0.1):
+    
+    def produce_offspring(self, n, opts):
         children = []
-        for i in range(n):
-            genes = [None]*self.len
-            nets = [None]*self.len
-            nets[0] = self.nets[0]
-            for pos in range(1, self.len):
-                x,y = self.to_xy(pos)
-                if False and random.random() < p_mut:
-                    mutation_type = random.choice(["type", "params"])
-                    if mutation_type == "type":
-                        new_type = random.randint(0, GENE_TYPES_LEN)
+        parent_genome = self.genome
+        for _ in range(n):
+            genome = []
+            outputs = self.outputs
+            for pos, gene_repr in enumerate(parent_genome, start=1):
+                x, y = self.to_xy(pos)
+                if not self.genes[pos] or random.random() < opts.struct_mutation_p:
+                    new_gene = self.spawn_random_gene(x, y)
+                    if len(new_gene.inputs) == 1:
+                        inp_repr = new_gene.inputs[0]
+                    else:
+                        inp_repr = tuple(new_gene.inputs)
+                    genome.append(
+                        tuple([new_gene.type, inp_repr, *new_gene.args])
+                    )
+                    if opts.debug_mutation:
+                        print(f'MUTUJE : {gene_repr} -> {genome[-1]}')
                 else:
-                    nets[pos] = self.nets[pos]
-                    genes[pos] = self.genes[pos]
-            children.append(CGP_Net.from_parent(genes, nets, self.outputs, self))
+                    genome.append(gene_repr)
+                    #print(f'nie mutuje {gene_repr}')
+            if random.random() < opts.output_mutation_p:
+                old = copy.deepcopy(outputs)
+                p = 0.5
+                while random.random() < p and outputs:
+                    idx = random.randrange(len(outputs))
+                    del outputs[idx]
+                    p *= 0.5
+                p = 0.5
+                while random.random() < p and len(outputs) < self.len:
+                    idx = random.randint(0, self.len - 2)
+                    while idx in outputs:
+                        idx = (idx + 1) % (self.len - 1)
+                    outputs.append(idx)
+                    p *= 0.5
+                if not outputs:
+                    outputs.append(random.randint(0, self.len - 2))
+                if opts.debug_mutation:
+                    print(f'output zmieniony {old} -> {outputs}')
+            else:
+                if opts.debug_mutation:
+                    print('output zostaje')
+            child = CGP_Net(
+                opts=self.opts,
+                x_dim=self.x_dim,
+                y_dim=self.y_dim,
+                outputs=outputs,
+                genome=genome
+            )
+            children.append(child)
         return children
     
+    def produce_offspring2(self, n, opts):
+        children = []
+        parent_genome = self.genome
+       
+
+        for _ in range(n):
+            genome = copy.deepcopy(parent_genome)
+            outputs = self.outputs
+            
+                
+            for pos, _ in enumerate(self.genes):
+                x, y = self.to_xy(pos)
+                if not self.genes[pos]:
+                    new_gene = self.spawn_random_gene(x, y)
+                    genome[pos - 1] = new_gene.to_genome()
+        
+            pos = random.randint(1, len(parent_genome) - 1)
+            #if pos == len(parent_genome) + 1:
+            if random.random() <= 0.2: 
+                if len(outputs) > 1 and random.randint(0, 1):
+                    outputs.pop(random.randrange(len(outputs)))
+                else:
+                    outputs.append(random.randint(0, self.len - 2))
+            else:
+                x, y = self.to_xy(pos)
+                new_gene = self.spawn_random_gene(x, y)
+                genome[pos - 1] = new_gene.to_genome()
+        
+            child = CGP_Net(
+                opts=self.opts,
+                x_dim=self.x_dim,
+                y_dim=self.y_dim,
+                outputs=outputs,
+                genome=genome
+            )
+            children.append(child)
+        return children
+    
+    @staticmethod
+    def random_genome(opts, x_dim, y_dim):
+        dummy = CGP_Net.__new__(CGP_Net)
+        dummy.x_dim = x_dim
+        dummy.y_dim = y_dim
+        length = x_dim * y_dim
+        genome = [None] * (length) 
+        for x in range(x_dim):
+            for y in range(y_dim):
+                gene = dummy.spawn_random_gene(x, y)
+                genome[x + y*x_dim] = gene.to_genome()
+                
+        outputs = []
+        p = 1
+        while random.random() < p and len(outputs) < length:
+            idx = random.randint(0, length)
+            while idx in outputs:
+                idx = (idx + 1) % (length)
+            outputs.append(idx)
+            p *= 0.5
+        return CGP_Net(
+            opts=opts,
+            x_dim=x_dim,
+            y_dim=y_dim,
+            genome=genome,
+            outputs=outputs
+        )
+        
     def save_snapshot(self):
         snapshot = {}
         for pos, net_element in enumerate(self.nets):
@@ -466,22 +542,52 @@ class CGP_Net(nn.Module):
         for pos, net_element in enumerate(self.nets):
             if net_element and net_element.nn and f"net_{pos}" in snapshot:
                 net_element.nn.load_state_dict(snapshot[f"net_{pos}"])
-            
-    def mutate_gene(self, gene, i):
-        layer_type = gene[0]
-        mutation_type = random.choice(["type", "param"])
-
-        # zmiana typu
-        if mutation_type == "type":
-            return self.spawn_gene(i)
-
-        # zmiana parametru
-        else:
-            if layer_type == 5:
-                skip_from = skip_from = random.randint(1, i + 1)
-                return (5, -skip_from)
-            elif layer_type == 6:
-                return (6, random.randint(-1, 1))
-            else:
-                return self.spawn_gene(i)
     
+    def export_genome(self):
+        genome = []
+
+        for pos in range(1, self.len - 1):
+            gene = self.genes[pos]
+            if gene is None:
+                genome.append(None)
+                continue
+            if len(gene.inputs) == 1:
+                inp_repr = gene.inputs[0]
+            else:
+                inp_repr = tuple(gene.inputs)
+            genome.append(
+                tuple([gene.type, inp_repr, *gene.args])
+            )
+        return genome
+            
+            
+    @staticmethod
+    def are_equivalent(net_a, net_b):
+        if tuple(net_a.outputs) != tuple(net_a.outputs):
+            return False
+        
+        for pos in range(1, net_a.len - 1):
+            a_gene = net_a.genes[pos]
+            b_gene = net_b.genes[pos]
+            if not a_gene: 
+                if b_gene and b_gene.active:
+                    return False
+                else:
+                    continue
+            if not b_gene:
+                if a_gene and a_gene.active:
+                    return False
+                else:
+                    continue
+            if not a_gene and not b_gene:
+                continue
+            elif not (a_gene.active and b_gene.active):
+                continue
+            if a_gene.type != b_gene.type:
+                return False
+            if tuple(a_gene.inputs) != tuple(b_gene.inputs):
+                return False
+            if tuple(a_gene.args) != tuple(b_gene.args):
+                return False
+            
+        return True

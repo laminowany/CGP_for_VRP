@@ -15,7 +15,7 @@ from learning.problem_vrp import CVRP
 
 @dataclass
 class EvaluationResult:
-    score: float
+    scores: list
     snapshots: list
     
 
@@ -42,6 +42,7 @@ def evaluate(opts, model, logger: Logger, osobnik_id = None, snapshots_epochs=[]
     #     random.seed(opts.seed)
     #     torch.manual_seed(opts.seed)
     snapshots = []
+    scores = []
     for epoch in range(opts.epoch_start + 1, opts.epoch_start + opts.n_epochs + 1):
         start = time.perf_counter()
         try:
@@ -54,6 +55,7 @@ def evaluate(opts, model, logger: Logger, osobnik_id = None, snapshots_epochs=[]
                 validation_set,
                 opts
             )
+            scores.append(score)
         except TimeoutError:
             return None
         end = time.perf_counter()
@@ -68,7 +70,7 @@ def evaluate(opts, model, logger: Logger, osobnik_id = None, snapshots_epochs=[]
             snapshots.append(snapshot)
             filename = os.path.join(opts.save_dir, f'snapshot_osobnik{osobnik_id}_epoch{epoch}.pth')
             torch.save(snapshot, filename)
-    return EvaluationResult(score, snapshots)
+    return EvaluationResult(scores, snapshots)
 
 def validate(model, dataset, opts):
     cost = rollout(model, dataset, opts)

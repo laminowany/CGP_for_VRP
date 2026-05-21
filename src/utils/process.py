@@ -75,6 +75,12 @@ def get_options(args=None):
     opts.n_heads = 8
 
     opts.epoch_time_limit = 10*60 # 10 minut
+
+    # MUTATION
+    opts.struct_mutation_p = 0.1
+    opts.output_mutation_p = 0.2
+    opts.debug_mutation = True
+    opts.debug = False
     
     opts.use_cuda = torch.cuda.is_available() and not opts.no_cuda
     opts.device = torch.device("cuda:0" if opts.use_cuda else "cpu")

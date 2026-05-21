@@ -70,8 +70,36 @@ class AttentionModel(nn.Module):
         self.project_out = nn.Linear(self.embedding_dim, self.embedding_dim, bias=False)
         self.to(opts.device)    
 
-    def load_weights(self, filename):
-        self.load_state_dict(torch.load(filename), strict=False)
+    def get_encoder(self):
+        return self.embedder
+
+    # def load_weights(self, filename):
+    #     self.load_state_dict(torch.load(filename), strict=False)
+        
+    def load_weights_from_filename(self, filename):
+        loaded = torch.load(filename)
+        current = self.state_dict()
+        compatible = {}
+
+        for k, v in loaded.items():
+            if k not in current:
+                continue
+            if current[k].shape != v.shape:
+                continue
+            compatible[k] = v
+        self.load_state_dict(compatible, strict=False)
+        
+    def load_weights(self, weights):
+        current = self.state_dict()
+        compatible = {}
+
+        for k, v in weights.items():
+            if k not in current:
+                continue
+            if current[k].shape != v.shape:
+                continue
+            compatible[k] = v
+        self.load_state_dict(compatible, strict=False)
 
     def set_decode_type(self, decode_type, temp=None):
         self.decode_type = decode_type
