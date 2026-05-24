@@ -54,4 +54,3 @@ def export_cgp_to_graphviz(genes, filename="cgp_graph"):
             dot.edge(str(inp), str(g.pos))
 
     dot.render(filename, format="png", cleanup=True)
-    print(f"Saved to {filename}.png")

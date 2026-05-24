@@ -231,7 +231,7 @@ class CGP_Net(nn.Module):
         self.debug = opts.debug
         self.outputs = outputs
         self.genome = genome
-        
+        #print(f'GCP_NET: outputs: {outputs}, genome: {genome}')
         self.genes = parse_genes([None, *genome, None])
         self.genes[self.len - 1] = parse_gene((5, tuple(outputs)), self.len-1)
         
@@ -472,25 +472,29 @@ class CGP_Net(nn.Module):
 
         for _ in range(n):
             genome = copy.deepcopy(parent_genome)
-            outputs = self.outputs
+            outputs = copy.deepcopy(self.outputs)
             
                 
-            for pos, _ in enumerate(self.genes):
+            for pos in range(1, len(self.genes) - 1):
                 x, y = self.to_xy(pos)
                 if not self.genes[pos]:
                     new_gene = self.spawn_random_gene(x, y)
                     genome[pos - 1] = new_gene.to_genome()
         
             pos = random.randint(1, len(parent_genome) - 1)
+            
             #if pos == len(parent_genome) + 1:
             if random.random() <= 0.2: 
+                orig = copy.deepcopy(outputs)
                 if len(outputs) > 1 and random.randint(0, 1):
                     outputs.pop(random.randrange(len(outputs)))
                 else:
                     outputs.append(random.randint(0, self.len - 2))
+                #print(f'output: {orig} -> {outputs}')
             else:
                 x, y = self.to_xy(pos)
                 new_gene = self.spawn_random_gene(x, y)
+                #print(f'mutating {pos}: {genome[pos - 1]} -> {new_gene.to_genome()}')
                 genome[pos - 1] = new_gene.to_genome()
         
             child = CGP_Net(
@@ -560,10 +564,30 @@ class CGP_Net(nn.Module):
             )
         return genome
             
+    def __hash__(self):
+        res = []
+        for pos in range(1, self.len - 1):
+            gene = self.genes[pos]
+
+            if not gene or not gene.active:
+                continue
+
+            res.append((
+                pos,
+                gene.type,
+                tuple(sorted(gene.inputs)),
+                tuple(gene.args)
+            ))
+        
+        return hash((
+            frozenset(self.outputs),
+            tuple(res)
+        ))
             
     @staticmethod
     def are_equivalent(net_a, net_b):
-        if tuple(net_a.outputs) != tuple(net_a.outputs):
+        return hash(net_a) == hash(net_b)
+        if tuple(net_a.outputs) != tuple(net_b.outputs):
             return False
         
         for pos in range(1, net_a.len - 1):
@@ -579,10 +603,10 @@ class CGP_Net(nn.Module):
                     return False
                 else:
                     continue
-            if not a_gene and not b_gene:
+            if not a_gene.active and not b_gene.active:
                 continue
-            elif not (a_gene.active and b_gene.active):
-                continue
+            if  a_gene.active != b_gene.active:
+                return False
             if a_gene.type != b_gene.type:
                 return False
             if tuple(a_gene.inputs) != tuple(b_gene.inputs):

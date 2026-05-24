@@ -22,7 +22,7 @@ def initial_setup(opts):
         opts.save_dir,
         "children"
     ))
-    #reset_seeds(opts)
+    reset_seeds(opts)
     
 def reset_seeds(opts):
     random.seed(opts.seed)
@@ -84,7 +84,15 @@ def verify_sanity(opts, logger: Logger):
     opts.n_epochs = orig_epochs
     opts.epoch_size = orig_epoch_size
 
-
+def compare_floats(a: float, b: float, eps: float = 1e-9) -> int:
+    diff = a - b
+    if abs(diff) <= eps:
+        return 0
+    elif diff < 0:
+        return -1
+    else:
+        return 1
+    
 def run(opts):
     initial_setup(opts)
     logger = Logger(opts)
@@ -99,86 +107,97 @@ def run(opts):
     
     children_limit = 4
     osobnik_id = 1
-    models = {}
+    #models = {}
     scores = {}
     best_so_far = 0
 
     generation = 1
     
+        
+    result_cache = {}
     
     baseline = produce_reference(2, 3)
     x_dim = len(baseline)
     
-    genome = [*[None]*x_dim,
-             *baseline,
-             *[None]*x_dim,]
-    outputs = [48]
-    baseline = AttentionModel(opts, CGP_Net(opts, x_dim, 3, genome, outputs))
-    best_weights = torch.load('/home/piotr/repos/magisterka/outputs/BASE_GENOME_CGP2D/snapshot_osobnik0_epoch50.pth')
-    best_score = 4.8 #4.785
-    parent = baseline
+    # genome = [*[None]*x_dim,
+    #          *baseline,
+    #          *[None]*x_dim,]
+    # outputs = [48]
+    # baseline = AttentionModel(opts, CGP_Net(opts, x_dim, 3, genome, outputs))
+    # best_weights = torch.load('/home/piotr/repos/magisterka/outputs/BASE_GENOME_CGP2D/snapshot_osobnik0_epoch50.pth')
+    # best_score = 4.8 #4.785
+    # parent = baseline
     #models[0] = parent
     
     opts.n_epochs = 10
     opts.epoch_size = 128000
-    # best_score = 10000
-    # for i in range(children_limit + 1):
-    #     models[osobnik_id] = AttentionModel(opts, CGP_Net.random_genome(opts, x_dim, 3))
-    #     export_cgp_to_graphviz(models[osobnik_id].get_encoder().genes, os.path.join(children_out_dir, f"children{osobnik_id}"))
-    #     scores[osobnik_id]  = evaluate(opts, models[osobnik_id], logger, osobnik_id).score
-    #     if scores[osobnik_id]  < best_score:
-    #         best_score = scores[osobnik_id] 
-    #         best_so_far = osobnik_id
-    #         best_weights = models[osobnik_id].get_encoder().save_snapshot()
-    #         parent = models[osobnik_id]
-    #     osobnik_id += 1
+    best_score = 10000
+    for i in range(children_limit + 1):
+        candidate = AttentionModel(opts, CGP_Net.random_genome(opts, x_dim, 3))
+        export_cgp_to_graphviz(candidate.get_encoder().genes, os.path.join(children_out_dir, f"_CANDIDATE{osobnik_id}"))
+        hashkey = hash(candidate.get_encoder()) 
+
+        if hashkey in result_cache: # duplicate
+            continue
+        
+        result  = evaluate(opts, candidate, logger, osobnik_id)
+        if result:    
+            scores[osobnik_id] =  result.scores[-1] # sum(result.scores[-3:])/3.0
+            result_cache[hashkey] = scores[osobnik_id]
+            if compare_floats(scores[osobnik_id], best_score) == -1:
+                best_score = scores[osobnik_id]
+                best_weights = candidate.get_encoder().save_snapshot()
+                best_model = candidate
+        osobnik_id += 1
     
+    parent_weights = best_weights
+    parent_score = best_score
+    parent = best_model
     # opts.n_epochs = 5
     # opts.epoch_size = 128000
     
-    
-    
+
     
     while True:  
         children = parent.get_encoder().produce_offspring2(children_limit, opts)
-        export_cgp_to_graphviz(parent.get_encoder().genes, os.path.join(children_out_dir, f"children{osobnik_id}_BASE"))
-        parent_weights = best_weights
+        export_cgp_to_graphviz(parent.get_encoder().genes, os.path.join(children_out_dir, f"{generation}__PARENT"))
+        
         for child in children:
             logger.record(key="children", osobnik_id=osobnik_id, genome=child.genome, outputs=child.outputs)
             model = AttentionModel(opts, child)
-            is_old= CGP_Net.are_equivalent(parent.get_encoder(), model.get_encoder())
-            # print(f'{"OLD" if is_old else "NOWY"}')
-            # continue
-            export_cgp_to_graphviz(model.get_encoder().genes, os.path.join(children_out_dir, f"children{osobnik_id}"))
-            if is_old:
-                #export_cgp_to_graphviz(model.get_encoder().genes, os.path.join(children_out_dir, f"children{osobnik_id}"))
-                scores[osobnik_id] = best_score       
-                # osobnik_id += 1
-                # continue
+            hashkey = hash(child) 
+            parent_equivalent = CGP_Net.are_equivalent(parent.get_encoder(), model.get_encoder())
+            
+            if parent_equivalent:
+                scores[osobnik_id] = result_cache[hashkey]
+                export_cgp_to_graphviz(model.get_encoder().genes, os.path.join(children_out_dir, f"{generation}_children{osobnik_id}_EQ"))
+                if compare_floats(parent_score, best_score) == 0: # neutral drift
+                    best_model = model
             else:
-                # export_cgp_to_graphviz(model.get_encoder().genes, os.path.join(children_out_dir, f"children{osobnik_id}"))
-                # osobnik_id += 1
-                # continue
+                export_cgp_to_graphviz(model.get_encoder().genes, os.path.join(children_out_dir, f"{generation}_children{osobnik_id}_NEW"))
                 model.load_weights(parent_weights)
-                result = evaluate(opts, model, logger, osobnik_id)
-                if result:       
-                    scores[osobnik_id] = sum(result.scores[-3:])/3.0
-                    if scores[osobnik_id] < best_score:
-                        best_score = scores[osobnik_id]
-                        best_weights = model.get_encoder().save_snapshot()
-                        print(f'Znaleziono lepszego osobnika {osobnik_id} o koszcie: {best_score}. {"" if is_old else "NOWY"}')
+                if hashkey in result_cache:
+                    scores[osobnik_id] = result_cache[hashkey]
                 else:
-                    scores[osobnik_id] = None
-            if scores[osobnik_id] and scores[osobnik_id] <= best_score:
-                best_score = scores[osobnik_id]
-                best_weights = model.get_encoder().save_snapshot()
-                print(f'Znaleziono lepszego osobnika {osobnik_id} o koszcie: {best_score}. {"" if is_old else "NOWY"}')
+                    result = evaluate(opts, model, logger, osobnik_id)
+                    if result:
+                        scores[osobnik_id] = result.scores[-1]
+                        result_cache[hashkey] = scores[osobnik_id]
+                        if compare_floats(scores[osobnik_id], best_score) == -1:
+                            best_model = model
+                            best_score = scores[osobnik_id]
+                            best_weights = model.get_encoder().save_snapshot()
+                            print(f'Znaleziono lepszego osobnika {osobnik_id} o koszcie: {best_score}.')
+                    else:
+                        scores[osobnik_id] = None
             logger.record(key="children_scores", osobnik_id=osobnik_id, final_score=scores[osobnik_id])
             osobnik_id += 1
+        parent = best_model
+        parent_score = best_score
+        parent_weights = best_weights
             
-        parent = model
         print(f'Generacja {generation}, najlepszy {best_score}')    
-        logger.record(key="evolution", generation=generation, genome=parent.get_encoder().genome,  outputs=child.outputs, score=best_score)
+        logger.record(key="evolution", generation=generation, genome=parent.get_encoder().genome,  outputs=parent.get_encoder().outputs, score=best_score)
         generation += 1
       
         
