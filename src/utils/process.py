@@ -1,5 +1,6 @@
 import argparse
 import os
+import random
 import time
 import torch
 
@@ -7,8 +8,7 @@ def get_options(args=None):
     parser = argparse.ArgumentParser(
         description="Model of evolving architecture of GNN with CGP for CVRP")
 
-    # # Data
-
+    parser.add_argument('--seed', type=int, default=None, help='Random seed to use')
     parser.add_argument('--graph_size', type=int, default=20, help="The size of the problem graph")
     parser.add_argument('--batch_size', type=int, default=512, help='Number of instances per batch during training')
     parser.add_argument('--epoch_size', type=int, default=1280000, help='Number of instances per epoch during training')
@@ -61,14 +61,24 @@ def get_options(args=None):
     # parser.add_argument('--no_tensorboard', action='store_true', help='Disable logging TensorBoard files')
     parser.add_argument('--no_progress_bar', action='store_true', help='Disable progress bar')
 
-    parser.add_argument('--seed', type=int, default=23, help='Random seed to use')
     parser.add_argument('--log_dir', default='../logs', help='Directory to write TensorBoard information to')
     parser.add_argument('--run_name', default='run', help='Name to identify the run')
     parser.add_argument('--output_dir', default='outputs', help='Directory to write output models to')
-
+    
+    parser.add_argument('--generations', type=int, default=300, help='Number of generations being evolved')
+    parser.add_argument('--start_from_transformer', action='store_true', help='Indicates if evolution starts from transformer architecture'
+                        ' instead of randomly generated parents')
+    parser.add_argument('--x_dim', type=int, default=24, help='Size of X dimension of the grid')
+    parser.add_argument('--y_dim', type=int, default=3, help='Size of Y dimension of the grid')
+   
     opts = parser.parse_args(args)
-
-    # CUSTOM SZENIGANS
+    if opts.seed is None:
+        opts.seed = random.randint(0, 9999)
+        
+    # CUSTOM SENEGAS
+    opts.n_epochs = 10
+    opts.epoch_size = 128000
+    
     opts.graph_size = 10
     opts.baseline = 'rollout'
     opts.no_progress_bar = True

@@ -1,17 +1,15 @@
+import ast
+import csv
 import os
-import json
-import time
 import torch
-import torch.optim as optim
 import random
 
-from legacy import GenomeFactory
 from utils.graph import export_cgp_to_graphviz
+from utils.misc import compare_floats
 from utils.process import get_options
 from learning.attention_model import AttentionModel
 from learning.cgp import CGP_Net
 from learning.encoders.graph_encoder import GraphAttentionEncoder
-from learning.reinforce_baselines import RolloutBaseline, WarmupBaseline
 from learning.problem_vrp import CVRP
 from utils.training import evaluate 
 from utils.logger import Logger
@@ -20,8 +18,19 @@ def initial_setup(opts):
     os.makedirs(opts.save_dir)
     os.makedirs(os.path.join(
         opts.save_dir,
-        "children"
+        "genomes_full"
     ))
+    opts.genomes_full_out_dir = os.path.join(opts.save_dir, "genomes_full")
+    os.makedirs(os.path.join(
+        opts.save_dir,
+        "genomes_active"
+    ))
+    opts.genomes_active_out_dir = os.path.join(opts.save_dir, "genomes_active")
+    os.makedirs(os.path.join(
+        opts.save_dir,
+        "parents"
+    ))
+    opts.parents_out_dir = os.path.join(opts.save_dir, "parents")
     reset_seeds(opts)
     
 def reset_seeds(opts):
@@ -83,84 +92,88 @@ def verify_sanity(opts, logger: Logger):
     print("ALL GOOD BOSS")
     opts.n_epochs = orig_epochs
     opts.epoch_size = orig_epoch_size
-
-def compare_floats(a: float, b: float, eps: float = 1e-9) -> int:
-    diff = a - b
-    if abs(diff) <= eps:
-        return 0
-    elif diff < 0:
-        return -1
-    else:
-        return 1
     
+    
+def test_single_chromosome(output_dir_path, opts, chromosome_id, logger):
+    csv_path = os.path.join(output_dir_path, "children.csv")
+    
+    with open(csv_path, newline="", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            if int(row["osobnik_id"]) == chromosome_id:
+                genome = ast.literal_eval(row["genome"])
+                outputs = ast.literal_eval(row["outputs"])
+                model = AttentionModel(opts, CGP_Net(opts, 24, 3, genome, outputs))
+                export_cgp_to_graphviz(model.get_encoder().genes, os.path.join(opts.save_dir, f"CHROMOSOME_{chromosome_id}"))
+                break
+
+    evaluate(opts, model, logger, chromosome_id)
+
+
 def run(opts):
     initial_setup(opts)
     logger = Logger(opts)
-    #verify_sanity(opts, logger)
-    children_out_dir = os.path.join(opts.save_dir, "children")
+    verify_sanity(opts, logger)
     opts.debug = False
     opts.validation_set = CVRP.make_dataset(size=opts.graph_size, num_samples=opts.val_size)
     
-
-    opts.n_epochs = 5
-    opts.epoch_size = 128000
-    
     children_limit = 4
     osobnik_id = 1
-    #models = {}
     scores = {}
-    best_so_far = 0
-
     generation = 1
-    
-        
     result_cache = {}
     
-    baseline = produce_reference(2, 3)
-    x_dim = len(baseline)
+    # opts.n_epochs = 10
+    # opts.epoch_size = 128000
+    # best_score = 10000
     
-    # genome = [*[None]*x_dim,
-    #          *baseline,
-    #          *[None]*x_dim,]
-    # outputs = [48]
-    # baseline = AttentionModel(opts, CGP_Net(opts, x_dim, 3, genome, outputs))
-    # best_weights = torch.load('/home/piotr/repos/magisterka/outputs/BASE_GENOME_CGP2D/snapshot_osobnik0_epoch50.pth')
-    # best_score = 4.8 #4.785
-    # parent = baseline
-    #models[0] = parent
-    
-    opts.n_epochs = 10
-    opts.epoch_size = 128000
-    best_score = 10000
-    for i in range(children_limit + 1):
-        candidate = AttentionModel(opts, CGP_Net.random_genome(opts, x_dim, 3))
-        export_cgp_to_graphviz(candidate.get_encoder().genes, os.path.join(children_out_dir, f"_CANDIDATE{osobnik_id}"))
-        hashkey = hash(candidate.get_encoder()) 
+    if opts.start_from_transformer:
+        baseline = produce_reference(2, 3)
+        x_dim = len(baseline)
+        genome = [*[None]*x_dim,
+                *baseline,
+                *[None]*x_dim,]
+        outputs = [48]
+        baseline = AttentionModel(opts, CGP_Net(opts, x_dim, 3, genome, outputs))
+        hashkey = hash(baseline.get_encoder()) 
+        best_weights = torch.load('/home/piotr/repos/magisterka/outputs/BASE_GENOME_CGP2D/snapshot_osobnik0_epoch10.pth')
+        best_score = 4.8383 #4.785
+        result_cache[hashkey] = best_score
+        best_model = baseline
+        best_id = 0
+        export_cgp_to_graphviz(baseline.get_encoder().genes, os.path.join(opts.genomes_full_out_dir, f"TRANSFORMER{osobnik_id}"), only_active=False)
+        export_cgp_to_graphviz(baseline.get_encoder().genes, os.path.join(opts.genomes_active_out_dir, f"TRANSFORMER{osobnik_id}"), only_active=True)
+    else:
+        best_score = None
+        for _ in range(children_limit + 1):
+            candidate = AttentionModel(opts, CGP_Net.random_genome(opts, opts.x_dim, opts.y_dim))
+            export_cgp_to_graphviz(candidate.get_encoder().genes, os.path.join(opts.genomes_full_out_dir, f"_CANDIDATE_{osobnik_id}"), only_active=False)
+            export_cgp_to_graphviz(candidate.get_encoder().genes, os.path.join(opts.genomes_active_out_dir, f"_CANDIDATE_{osobnik_id}"), only_active=True)
+            hashkey = hash(candidate.get_encoder()) 
 
-        if hashkey in result_cache: # duplicate
-            continue
-        
-        result  = evaluate(opts, candidate, logger, osobnik_id)
-        if result:    
-            scores[osobnik_id] =  result.scores[-1] # sum(result.scores[-3:])/3.0
-            result_cache[hashkey] = scores[osobnik_id]
-            if compare_floats(scores[osobnik_id], best_score) == -1:
-                best_score = scores[osobnik_id]
-                best_weights = candidate.get_encoder().save_snapshot()
-                best_model = candidate
-        osobnik_id += 1
+            if hashkey in result_cache: # duplicate
+                continue
+            
+            result  = evaluate(opts, candidate, logger, osobnik_id)
+            if result:    
+                scores[osobnik_id] =  result.scores[-1]
+                result_cache[hashkey] = scores[osobnik_id]
+                if not best_score or compare_floats(scores[osobnik_id], best_score) == -1:
+                    best_score = scores[osobnik_id]
+                    best_weights = candidate.get_encoder().save_snapshot()
+                    best_model = candidate
+                    best_id = osobnik_id
+            osobnik_id += 1
     
     parent_weights = best_weights
     parent_score = best_score
     parent = best_model
-    # opts.n_epochs = 5
-    # opts.epoch_size = 128000
+    export_cgp_to_graphviz(parent.get_encoder().genes, os.path.join(opts.parents_out_dir, f"generation_{0}_genome_{osobnik_id}"), only_active=True)
+    export_cgp_to_graphviz(parent.get_encoder().genes, os.path.join(opts.parents_out_dir, f"generation_{0}_genome_{osobnik_id}_FULL"), only_active=False)
     
-
-    
-    while True:  
+    while generation <= opts.generations:  
         children = parent.get_encoder().produce_offspring2(children_limit, opts)
-        export_cgp_to_graphviz(parent.get_encoder().genes, os.path.join(children_out_dir, f"{generation}__PARENT"))
+        #export_cgp_to_graphviz(parent.get_encoder().genes, os.path.join(opts.children_out_dir, f"{generation}__PARENT"))
         
         for child in children:
             logger.record(key="children", osobnik_id=osobnik_id, genome=child.genome, outputs=child.outputs)
@@ -170,11 +183,13 @@ def run(opts):
             
             if parent_equivalent:
                 scores[osobnik_id] = result_cache[hashkey]
-                export_cgp_to_graphviz(model.get_encoder().genes, os.path.join(children_out_dir, f"{generation}_children{osobnik_id}_EQ"))
+                export_cgp_to_graphviz(model.get_encoder().genes, os.path.join(opts.genomes_full_out_dir, f"{generation}_genome_{osobnik_id}_EQ"), only_active=False)
+                export_cgp_to_graphviz(model.get_encoder().genes, os.path.join(opts.genomes_active_out_dir, f"{generation}_genome_{osobnik_id}_EQ"), only_active=True)
                 if compare_floats(parent_score, best_score) == 0: # neutral drift
                     best_model = model
             else:
-                export_cgp_to_graphviz(model.get_encoder().genes, os.path.join(children_out_dir, f"{generation}_children{osobnik_id}_NEW"))
+                export_cgp_to_graphviz(model.get_encoder().genes, os.path.join(opts.genomes_full_out_dir, f"{generation}_genome_{osobnik_id}_NEW"), only_active=False)
+                export_cgp_to_graphviz(model.get_encoder().genes, os.path.join(opts.genomes_active_out_dir, f"{generation}_genome_{osobnik_id}_NEW"), only_active=True)
                 model.load_weights(parent_weights)
                 if hashkey in result_cache:
                     scores[osobnik_id] = result_cache[hashkey]
@@ -187,7 +202,10 @@ def run(opts):
                             best_model = model
                             best_score = scores[osobnik_id]
                             best_weights = model.get_encoder().save_snapshot()
+                            best_id = osobnik_id
                             print(f'Znaleziono lepszego osobnika {osobnik_id} o koszcie: {best_score}.')
+                            export_cgp_to_graphviz(model.get_encoder().genes, os.path.join(opts.parents_out_dir, f"generation_{generation}_genome_{osobnik_id}"), only_active=True)
+                            export_cgp_to_graphviz(model.get_encoder().genes, os.path.join(opts.parents_out_dir, f"generation_{generation}_genome_{osobnik_id}_FULL"), only_active=False)
                     else:
                         scores[osobnik_id] = None
             logger.record(key="children_scores", osobnik_id=osobnik_id, final_score=scores[osobnik_id])
@@ -197,34 +215,10 @@ def run(opts):
         parent_weights = best_weights
             
         print(f'Generacja {generation}, najlepszy {best_score}')    
-        logger.record(key="evolution", generation=generation, genome=parent.get_encoder().genome,  outputs=parent.get_encoder().outputs, score=best_score)
+        logger.record(key="evolution", generation=generation, best_id=best_id, score=best_score)
         generation += 1
       
-        
-        
-    for i, child in enumerate(children):
-        model = AttentionModel(opts, child)
-        evaluate(opts, model, logger, i)
-        
-    for i, child in enumerate(children):
-        model = AttentionModel(opts, child)
-        model.load_weights('/home/piotr/repos/magisterka/outputs/BASE_GENOME_CGP2D/snapshot_osobnik0_epoch50.pth')
-        evaluate(opts, model, logger, i+10)
     
-    # x_dim = 24
-    # outputs = [48]
-    # genome6 = [(7, 0), (3, 1, -1), (5, (49, 0, 1)), (3, 26, 0), (4, 3), (5, (51, 52)), (5, (54, 28)), (3, 7, 1), (2, 54), (4, 26), (1, 29), (1, 34), (2, 32), (2, 51), (4, 36), (2, 36), (5, (3, 60)), (3, 41, 1), (2, 40), (6, 16), (1, 49), (5, (14, 18)), (4, 35), (7, 40), (4, 0), (5, (0, 25)), (2, 26), (3, 27, 1), (7, 28), (3, 29, -1), (5, (27, 30)), (2, 31), (4, 32), (5, (32, 33)), (2, 34), (3, 35, 1), (7, 36), (3, 37, -1), (5, (35, 38)), (2, 39), (4, 40), (5, (40, 41)), (2, 42), (3, 43, 1), (7, 44), (3, 45, -1), (5, (43, 46)), (2, 47), (3, 0, -1), (1, 49), (6, 1), (6, 51), (4, 25), (1, 1), (2, 1), (7, 3), (4, 1), (6, 3), (3, 9, -1), (7, 54), (5, (6, 4)), (5, (33, 53)), (1, 50), (4, 62), (7, 63), (7, 41), (1, 30), (5, 6), (4, 1), (3, 26, 1), (6, 57), (4, 36)]
-    # specie6 = AttentionModel(opts, CGP_Net(opts, x_dim, 3, outputs, genome=genome6))
-    #export_cgp_to_graphviz(specie6.get_encoder().genes, "specie6")
-    #evaluate(opts, specie6, logger, 0)
-    return
-    # opts.n_epochs = 10
-    # opts.epoch_size = 12800
-    export_cgp_to_graphviz(children[6].genes, "my_cgp")
-
-
-
-
 if __name__ == "__main__":
     run(get_options())
  

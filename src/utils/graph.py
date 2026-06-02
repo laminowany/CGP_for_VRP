@@ -27,27 +27,35 @@ def gene_color(gene_type):
     return colors.get(gene_type, "white")
 
 
-def export_cgp_to_graphviz(genes, filename="cgp_graph"):
+def export_cgp_to_graphviz(genes, filename, only_active):
     dot = Digraph()
     dot.attr(rankdir="LR")
 
     # nodes
     for g in genes:
-        if g is None or not g.active:
+        if g is None or (only_active and not g.active):
             continue
+        
 
         label = f"{g.pos}\n{gene_type_name(g.type)}"
-
-        dot.node(
-            str(g.pos),
-            label=label,
-            style="filled",
-            fillcolor=gene_color(g.type)
-        )
+        if g.active:
+            dot.node(
+                str(g.pos),
+                label=label,
+                style="filled",
+                fillcolor=gene_color(g.type)
+            )
+        else:
+            dot.node(
+                str(g.pos),
+                label=label,
+                style="dashed",
+                fillcolor=gene_color(g.type)
+            )
 
     # edges
     for g in genes:
-        if g is None or not g.active:
+        if g is None or (only_active and not g.active):
             continue
 
         for inp in g.inputs:
