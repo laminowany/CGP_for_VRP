@@ -9,9 +9,9 @@ def get_options(args=None):
         description="Model of evolving architecture of GNN with CGP for CVRP")
 
     parser.add_argument('--seed', type=int, default=None, help='Random seed to use')
-    parser.add_argument('--graph_size', type=int, default=20, help="The size of the problem graph")
+    parser.add_argument('--graph_size', type=int, default=10, help="The size of the problem graph")
     parser.add_argument('--batch_size', type=int, default=512, help='Number of instances per batch during training')
-    parser.add_argument('--epoch_size', type=int, default=1280000, help='Number of instances per epoch during training')
+    parser.add_argument('--epoch_size', type=int, default=128000, help='Number of instances per epoch during training')
     parser.add_argument('--val_size', type=int, default=10000,
                         help='Number of instances used for reporting validation performance')
     # parser.add_argument('--val_dataset', type=str, default=None, help='Dataset file to use for validation')
@@ -30,7 +30,7 @@ def get_options(args=None):
     parser.add_argument('--lr_model', type=float, default=1e-4, help="Set the learning rate for the actor network")
     parser.add_argument('--lr_critic', type=float, default=1e-4, help="Set the learning rate for the critic network")
     parser.add_argument('--lr_decay', type=float, default=1.0, help='Learning rate decay per epoch')
-    parser.add_argument('--n_epochs', type=int, default=100, help='The number of epochs to train')
+    parser.add_argument('--n_epochs', type=int, default=10, help='The number of epochs to train')
 
     parser.add_argument('--max_grad_norm', type=float, default=1.0,
                         help='Maximum L2 norm for gradient clipping, default 1.0 (0 to disable clipping)')
@@ -65,7 +65,7 @@ def get_options(args=None):
     parser.add_argument('--run_name', default='run', help='Name to identify the run')
     parser.add_argument('--output_dir', default='outputs', help='Directory to write output models to')
     
-    parser.add_argument('--generations', type=int, default=300, help='Number of generations being evolved')
+    parser.add_argument('--generations', type=int, default=200, help='Number of generations being evolved')
     parser.add_argument('--start_from_transformer', action='store_true', help='Indicates if evolution starts from transformer architecture'
                         ' instead of randomly generated parents')
     parser.add_argument('--x_dim', type=int, default=24, help='Size of X dimension of the grid')
@@ -76,10 +76,6 @@ def get_options(args=None):
         opts.seed = random.randint(0, 9999)
         
     # CUSTOM SENEGAS
-    opts.n_epochs = 10
-    opts.epoch_size = 128000
-    
-    opts.graph_size = 10
     opts.baseline = 'rollout'
     opts.no_progress_bar = True
     opts.n_heads = 8

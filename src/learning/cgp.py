@@ -386,7 +386,7 @@ class CGP_Net(nn.Module):
             if scaling == 1 and first_input_dim <= 2048:
                 output_dim = first_input_dim * 4
                 net = nn.Linear(first_input_dim, output_dim)
-            elif scaling == -1 and first_input_dim >= 8:
+            elif scaling == -1 and first_input_dim >= 32:
                 output_dim = first_input_dim // 4
                 net = nn.Linear(first_input_dim, output_dim)
             else:

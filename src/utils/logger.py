@@ -8,13 +8,10 @@ class Logger:
     def __init__(self, opts):
         self.records = {} 
         self.opts = opts
-        self.saved_args = False
+        with open(os.path.join(self.opts.save_dir, "args.json"), 'w') as f:
+            json.dump({k: v for k, v in vars(self.opts).items() if k not in EXCLUDE}, f, indent=2)
      
     def record(self, key="epochs", **kwargs):
-        if not self.saved_args:
-            with open(os.path.join(self.opts.save_dir, "args.json"), 'w') as f:
-                json.dump({k: v for k, v in vars(self.opts).items() if k not in EXCLUDE}, f, indent=2)
-            self.saved_args = True
         if key not in self.records:
             self.records[key] = []
         self.records[key].append(kwargs)

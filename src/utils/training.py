@@ -38,9 +38,6 @@ def evaluate(opts, model, logger: Logger, osobnik_id = None, snapshots_epochs=[]
     if not validation_set:
         validation_set = CVRP.make_dataset(size=opts.graph_size, num_samples=opts.val_size)
     
-    # if opts.reproducible_seed:
-    #     random.seed(opts.seed)
-    #     torch.manual_seed(opts.seed)
     snapshots = []
     scores = []
     for epoch in range(opts.epoch_start + 1, opts.epoch_start + opts.n_epochs + 1):
