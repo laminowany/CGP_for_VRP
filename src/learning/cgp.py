@@ -219,7 +219,7 @@ GENE_TYPES_LEN = 7
 
 # (TYP, (INPUTY), (PARAMS))
 class CGP_Net(nn.Module):
-    def __init__(self, opts, x_dim, y_dim, genome, outputs):
+    def __init__(self, opts, x_dim, y_dim, genome):
         super().__init__()
         self.num_heads = 8
         self.feed_forward_hidden = 512
@@ -229,16 +229,14 @@ class CGP_Net(nn.Module):
         self.opts = opts
         self.embed_dim = opts.embedding_dim
         self.debug = opts.debug
-        self.outputs = outputs
         self.genome = genome
         #print(f'GCP_NET: outputs: {outputs}, genome: {genome}')
-        self.genes = parse_genes([None, *genome, None])
-        self.genes[self.len - 1] = parse_gene((5, tuple(outputs)), self.len-1)
+        self.genes = parse_genes([None, *genome])
         
         self.nets = [CGP_Element(None, self.embed_dim), *[None] * (self.len-1)]
         for x in range(self.x_dim):
             for y in range(self.y_dim):
-                idx = self.to_global_idx(x, y)
+                idx = self.get_global_idx(x, y)
                 if not self.genes[idx]:
                     continue
                 self.nets[idx] = self.produce_net(self.genes[idx])
@@ -327,14 +325,18 @@ class CGP_Net(nn.Module):
         order =[]
         for x in range(self.x_dim):
             for y in range(self.y_dim): 
-                idx = self.to_global_idx(x, y)
+                idx = self.get_global_idx(x, y)
                 if self.nets[idx] and self.nets[idx].active:
                     order.append(idx)
         order.append(self.len - 1)
         self.propagation_order = order
         
-    def to_global_idx(self, x, y):
-        return y*self.x_dim + x + 1
+    def get_global_idx(self, x, y):
+        return CGP_Net.to_global_idx(x, y, self.x_dim)
+    
+    @staticmethod
+    def to_global_idx(x, y, x_dim):
+        return y*x_dim+ x + 1
 
     def to_xy(self, pos):
         pos -= 1
@@ -343,17 +345,21 @@ class CGP_Net(nn.Module):
         return (x, y)
     
     def spawn_random_gene(self, x, y):
-        pos = self.to_global_idx(x, y)
+        pos = self.get_global_idx(x, y)
         type = random.randint(1, GENE_TYPES_LEN)
         args = []
         inputs = []
         
-        possible_inputs = [0]
-        for px in range(x):
-            for py in range(self.y_dim):
-                idx = self.to_global_idx(px, py)
-                possible_inputs.append(idx)
+        if x == 0:     
+            possible_inputs = [0]
+        else:
+            possible_inputs = list(map(lambda py: self.get_global_idx(x - 1, py) ,range(self.y_dim)))
             
+        # for px in range(x):
+        #     for py in range(self.y_dim):
+        #         idx = self.get_global_idx(px, py)
+        #         possible_inputs.append(idx)
+        #print(possible_inputs)
         prob_input = 1
         available = possible_inputs.copy()
         while random.random() < prob_input and available:
@@ -415,60 +421,6 @@ class CGP_Net(nn.Module):
     def produce_offspring(self, n, opts):
         children = []
         parent_genome = self.genome
-        for _ in range(n):
-            genome = []
-            outputs = self.outputs
-            for pos, gene_repr in enumerate(parent_genome, start=1):
-                x, y = self.to_xy(pos)
-                if not self.genes[pos] or random.random() < opts.struct_mutation_p:
-                    new_gene = self.spawn_random_gene(x, y)
-                    if len(new_gene.inputs) == 1:
-                        inp_repr = new_gene.inputs[0]
-                    else:
-                        inp_repr = tuple(new_gene.inputs)
-                    genome.append(
-                        tuple([new_gene.type, inp_repr, *new_gene.args])
-                    )
-                    if opts.debug_mutation:
-                        print(f'MUTUJE : {gene_repr} -> {genome[-1]}')
-                else:
-                    genome.append(gene_repr)
-                    #print(f'nie mutuje {gene_repr}')
-            if random.random() < opts.output_mutation_p:
-                old = copy.deepcopy(outputs)
-                p = 0.5
-                while random.random() < p and outputs:
-                    idx = random.randrange(len(outputs))
-                    del outputs[idx]
-                    p *= 0.5
-                p = 0.5
-                while random.random() < p and len(outputs) < self.len:
-                    idx = random.randint(0, self.len - 2)
-                    while idx in outputs:
-                        idx = (idx + 1) % (self.len - 1)
-                    outputs.append(idx)
-                    p *= 0.5
-                if not outputs:
-                    outputs.append(random.randint(0, self.len - 2))
-                if opts.debug_mutation:
-                    print(f'output zmieniony {old} -> {outputs}')
-            else:
-                if opts.debug_mutation:
-                    print('output zostaje')
-            child = CGP_Net(
-                opts=self.opts,
-                x_dim=self.x_dim,
-                y_dim=self.y_dim,
-                outputs=outputs,
-                genome=genome
-            )
-            children.append(child)
-        return children
-    
-    def produce_offspring2(self, n, opts):
-        children = []
-        parent_genome = self.genome
-       
 
         for _ in range(n):
             genome = copy.deepcopy(parent_genome)
@@ -513,26 +465,27 @@ class CGP_Net(nn.Module):
         dummy.x_dim = x_dim
         dummy.y_dim = y_dim
         length = x_dim * y_dim
-        genome = [None] * (length) 
+        genome = [None] * (length + 1) 
         for x in range(x_dim):
             for y in range(y_dim):
                 gene = dummy.spawn_random_gene(x, y)
                 genome[x + y*x_dim] = gene.to_genome()
                 
+        possible_inputs = list(map(lambda py: CGP_Net.to_global_idx(x_dim - 1, py, x_dim), range(y_dim)))
         outputs = []
-        p = 1
-        while random.random() < p and len(outputs) < length:
-            idx = random.randint(0, length)
-            while idx in outputs:
-                idx = (idx + 1) % (length)
-            outputs.append(idx)
-            p *= 0.5
+        prob_input = 1
+        while random.random() < prob_input and possible_inputs:
+            inp = random.choice(possible_inputs)
+            outputs.append(inp)
+            possible_inputs.remove(inp)
+            prob_input *= 0.5
+        genome[length] = (5, tuple(outputs))
+        
         return CGP_Net(
             opts=opts,
             x_dim=x_dim,
             y_dim=y_dim,
-            genome=genome,
-            outputs=outputs
+            genome=genome
         )
         
     def save_snapshot(self):
