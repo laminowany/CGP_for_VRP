@@ -9,9 +9,17 @@ def get_options(args=None):
         description="Model of evolving architecture of GNN with CGP for CVRP")
 
     parser.add_argument('--seed', type=int, default=None, help='Random seed to use')
+    parser.add_argument('--epoch_size', type=int, default=128000, help='Number of instances per epoch during training')
+    parser.add_argument('--generations', type=int, default=200, help='Number of generations being evolved')
+    parser.add_argument('--start_from_transformer', action='store_true', help='Indicates if evolution starts from transformer architecture'
+                        ' instead of randomly generated parents')
+    parser.add_argument('--x_dim', type=int, default=24, help='Size of X dimension of the grid')
+    parser.add_argument('--y_dim', type=int, default=3, help='Size of Y dimension of the grid')
+   
+   
     parser.add_argument('--graph_size', type=int, default=10, help="The size of the problem graph")
     parser.add_argument('--batch_size', type=int, default=512, help='Number of instances per batch during training')
-    parser.add_argument('--epoch_size', type=int, default=128000, help='Number of instances per epoch during training')
+
     parser.add_argument('--val_size', type=int, default=10000,
                         help='Number of instances used for reporting validation performance')
     # parser.add_argument('--val_dataset', type=str, default=None, help='Dataset file to use for validation')
@@ -58,19 +66,13 @@ def get_options(args=None):
     parser.add_argument('--log_step', type=int, default=50, help='Log info every log_step steps')
     parser.add_argument('--epoch_start', type=int, default=0,
                         help='Start at epoch # (relevant for learning rate decay)')
-    # parser.add_argument('--no_tensorboard', action='store_true', help='Disable logging TensorBoard files')
     parser.add_argument('--no_progress_bar', action='store_true', help='Disable progress bar')
 
     parser.add_argument('--log_dir', default='../logs', help='Directory to write TensorBoard information to')
     parser.add_argument('--run_name', default='run', help='Name to identify the run')
     parser.add_argument('--output_dir', default='outputs', help='Directory to write output models to')
     
-    parser.add_argument('--generations', type=int, default=200, help='Number of generations being evolved')
-    parser.add_argument('--start_from_transformer', action='store_true', help='Indicates if evolution starts from transformer architecture'
-                        ' instead of randomly generated parents')
-    parser.add_argument('--x_dim', type=int, default=24, help='Size of X dimension of the grid')
-    parser.add_argument('--y_dim', type=int, default=3, help='Size of Y dimension of the grid')
-   
+
     opts = parser.parse_args(args)
     if opts.seed is None:
         opts.seed = random.randint(0, 9999)

@@ -175,7 +175,7 @@ class Gene:
     args: list[int]
     active: bool = False
     
-    def to_genome(self):
+    def encode(self):
         inputs = self.inputs
         if len(inputs) == 1:
             inp_repr = inputs[0]
@@ -219,7 +219,7 @@ GENE_TYPES_LEN = 7
 
 # (TYP, (INPUTY), (PARAMS))
 class CGP_Net(nn.Module):
-    def __init__(self, opts, x_dim, y_dim, genome):
+    def __init__(self, opts, x_dim, y_dim, genome): 
         super().__init__()
         self.num_heads = 8
         self.feed_forward_hidden = 512
@@ -230,8 +230,8 @@ class CGP_Net(nn.Module):
         self.embed_dim = opts.embedding_dim
         self.debug = opts.debug
         self.genome = genome
-        #print(f'GCP_NET: outputs: {outputs}, genome: {genome}')
-        self.genes = parse_genes([None, *genome])
+        assert len(self.genome) == self.len
+        self.genes = parse_genes(self.genome)
         
         self.nets = [CGP_Element(None, self.embed_dim), *[None] * (self.len-1)]
         for x in range(self.x_dim):
@@ -336,9 +336,11 @@ class CGP_Net(nn.Module):
     
     @staticmethod
     def to_global_idx(x, y, x_dim):
-        return y*x_dim+ x + 1
+        return y*x_dim + x + 1
 
     def to_xy(self, pos):
+        if pos == self.len - 1:
+            return (self.x_dim, 0)
         pos -= 1
         x = pos % self.x_dim
         y = pos // self.x_dim
@@ -355,11 +357,6 @@ class CGP_Net(nn.Module):
         else:
             possible_inputs = list(map(lambda py: self.get_global_idx(x - 1, py) ,range(self.y_dim)))
             
-        # for px in range(x):
-        #     for py in range(self.y_dim):
-        #         idx = self.get_global_idx(px, py)
-        #         possible_inputs.append(idx)
-        #print(possible_inputs)
         prob_input = 1
         available = possible_inputs.copy()
         while random.random() < prob_input and available:
@@ -371,6 +368,50 @@ class CGP_Net(nn.Module):
             else:
                 prob_input *= 0.5
             
+        if type == 3:
+            args = [random.randint(-1, 1)]
+            
+        return Gene(pos, type, inputs, args)
+    
+    
+    def mutate_gene_inputs(self, x, y):
+        pos = self.get_global_idx(x, y)
+        orig_inputs = self.genes[pos].inputs.copy()
+        type = self.genes[pos].type
+        args = self.genes[pos].args
+        
+        inputs = []
+        if x == 0:     
+            possible_inputs = [0]
+        else:
+            possible_inputs = list(map(lambda py: self.get_global_idx(x - 1, py) ,range(self.y_dim)))
+        
+        while True:
+            inputs = []  
+            prob_input = 1
+            available = possible_inputs.copy()
+            while random.random() < prob_input and available:
+                inp = random.choice(available)
+                inputs.append(inp)
+                available.remove(inp)
+                if type != 5:
+                    prob_input = 0
+                else:
+                    prob_input *= 0.5
+            
+            if set(inputs) != set(orig_inputs):
+                break
+            else:
+                print(f'REROLL {inputs} vs {orig_inputs}')
+        return Gene(pos, type, inputs, args)
+    
+    def mutate_gene_type(self, x, y):
+        pos = self.get_global_idx(x, y)
+        inputs = self.genes[pos].inputs
+        possible_types = range(1, GENE_TYPES_LEN + 1)
+        possible_types = [x for x in possible_types if x !=  self.genes[pos].type]
+        type = random.choice(possible_types)
+        args = []
         if type == 3:
             args = [random.randint(-1, 1)]
             
@@ -424,36 +465,27 @@ class CGP_Net(nn.Module):
 
         for _ in range(n):
             genome = copy.deepcopy(parent_genome)
-            outputs = copy.deepcopy(self.outputs)
-            
-                
+  
             for pos in range(1, len(self.genes) - 1):
                 x, y = self.to_xy(pos)
                 if not self.genes[pos]:
                     new_gene = self.spawn_random_gene(x, y)
-                    genome[pos - 1] = new_gene.to_genome()
+                    genome[pos - 1] = new_gene.encode()
         
             pos = random.randint(1, len(parent_genome) - 1)
-            
-            #if pos == len(parent_genome) + 1:
-            if random.random() <= 0.2: 
-                orig = copy.deepcopy(outputs)
-                if len(outputs) > 1 and random.randint(0, 1):
-                    outputs.pop(random.randrange(len(outputs)))
+            x, y = self.to_xy(pos)
+            if pos == len(parent_genome) - 1:
+                genome[pos] = self.mutate_gene_inputs(x, y).encode()
+            else:    
+                if random.random() < (self.y_dim / (self.y_dim + GENE_TYPES_LEN)) and x != 0:
+                    genome[pos] = self.mutate_gene_inputs(x, y).encode()
                 else:
-                    outputs.append(random.randint(0, self.len - 2))
-                #print(f'output: {orig} -> {outputs}')
-            else:
-                x, y = self.to_xy(pos)
-                new_gene = self.spawn_random_gene(x, y)
-                #print(f'mutating {pos}: {genome[pos - 1]} -> {new_gene.to_genome()}')
-                genome[pos - 1] = new_gene.to_genome()
+                    genome[pos] = self.mutate_gene_type(x, y).encode()
         
             child = CGP_Net(
                 opts=self.opts,
                 x_dim=self.x_dim,
                 y_dim=self.y_dim,
-                outputs=outputs,
                 genome=genome
             )
             children.append(child)
@@ -465,11 +497,11 @@ class CGP_Net(nn.Module):
         dummy.x_dim = x_dim
         dummy.y_dim = y_dim
         length = x_dim * y_dim
-        genome = [None] * (length + 1) 
+        genome = [None] * (length + 2) 
         for x in range(x_dim):
             for y in range(y_dim):
                 gene = dummy.spawn_random_gene(x, y)
-                genome[x + y*x_dim] = gene.to_genome()
+                genome[CGP_Net.to_global_idx(x, y, x_dim)] = gene.encode()
                 
         possible_inputs = list(map(lambda py: CGP_Net.to_global_idx(x_dim - 1, py, x_dim), range(y_dim)))
         outputs = []
@@ -479,7 +511,7 @@ class CGP_Net(nn.Module):
             outputs.append(inp)
             possible_inputs.remove(inp)
             prob_input *= 0.5
-        genome[length] = (5, tuple(outputs))
+        genome[length + 1] = (5, tuple(outputs))
         
         return CGP_Net(
             opts=opts,
@@ -519,7 +551,7 @@ class CGP_Net(nn.Module):
             
     def __hash__(self):
         res = []
-        for pos in range(1, self.len - 1):
+        for pos in range(1, self.len):
             gene = self.genes[pos]
 
             if not gene or not gene.active:
@@ -533,38 +565,9 @@ class CGP_Net(nn.Module):
             ))
         
         return hash((
-            frozenset(self.outputs),
             tuple(res)
         ))
             
     @staticmethod
     def are_equivalent(net_a, net_b):
         return hash(net_a) == hash(net_b)
-        if tuple(net_a.outputs) != tuple(net_b.outputs):
-            return False
-        
-        for pos in range(1, net_a.len - 1):
-            a_gene = net_a.genes[pos]
-            b_gene = net_b.genes[pos]
-            if not a_gene: 
-                if b_gene and b_gene.active:
-                    return False
-                else:
-                    continue
-            if not b_gene:
-                if a_gene and a_gene.active:
-                    return False
-                else:
-                    continue
-            if not a_gene.active and not b_gene.active:
-                continue
-            if  a_gene.active != b_gene.active:
-                return False
-            if a_gene.type != b_gene.type:
-                return False
-            if tuple(a_gene.inputs) != tuple(b_gene.inputs):
-                return False
-            if tuple(a_gene.args) != tuple(b_gene.args):
-                return False
-            
-        return True
