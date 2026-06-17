@@ -401,8 +401,6 @@ class CGP_Net(nn.Module):
             
             if set(inputs) != set(orig_inputs):
                 break
-            else:
-                print(f'REROLL {inputs} vs {orig_inputs}')
         return Gene(pos, type, inputs, args)
     
     def mutate_gene_type(self, x, y):
@@ -414,6 +412,8 @@ class CGP_Net(nn.Module):
         args = []
         if type == 3:
             args = [random.randint(-1, 1)]
+        if type != 5 and len(inputs) > 1:
+            inputs = inputs[:1]
             
         return Gene(pos, type, inputs, args)
 
