@@ -332,10 +332,12 @@ class CGP_Net(nn.Module):
         self.propagation_order = order
         
     def get_global_idx(self, x, y):
-        return CGP_Net.to_global_idx(x, y, self.x_dim)
+        return CGP_Net.to_global_idx(x, y, self.x_dim, self.y_dim)
     
     @staticmethod
-    def to_global_idx(x, y, x_dim):
+    def to_global_idx(x, y, x_dim, y_dim):
+        if x == x_dim:
+            return x_dim*y_dim + 1
         return y*x_dim + x + 1
 
     def to_xy(self, pos):
@@ -386,21 +388,17 @@ class CGP_Net(nn.Module):
         else:
             possible_inputs = list(map(lambda py: self.get_global_idx(x - 1, py) ,range(self.y_dim)))
         
-        while True:
-            inputs = []  
-            prob_input = 1
-            available = possible_inputs.copy()
-            while random.random() < prob_input and available:
-                inp = random.choice(available)
-                inputs.append(inp)
-                available.remove(inp)
-                if type != 5:
-                    prob_input = 0
-                else:
-                    prob_input *= 0.5
-            
-            if set(inputs) != set(orig_inputs):
-                break
+        inputs = []  
+        prob_input = 1
+        available = possible_inputs.copy()
+        while random.random() < prob_input and available:
+            inp = random.choice(available)
+            inputs.append(inp)
+            available.remove(inp)
+            if type != 5:
+                prob_input = 0
+            else:
+                prob_input *= 0.5
         return Gene(pos, type, inputs, args)
     
     def mutate_gene_type(self, x, y):
@@ -501,9 +499,9 @@ class CGP_Net(nn.Module):
         for x in range(x_dim):
             for y in range(y_dim):
                 gene = dummy.spawn_random_gene(x, y)
-                genome[CGP_Net.to_global_idx(x, y, x_dim)] = gene.encode()
+                genome[CGP_Net.to_global_idx(x, y, x_dim, y_dim)] = gene.encode()
                 
-        possible_inputs = list(map(lambda py: CGP_Net.to_global_idx(x_dim - 1, py, x_dim), range(y_dim)))
+        possible_inputs = list(map(lambda py: CGP_Net.to_global_idx(x_dim - 1, py, x_dim, y_dim), range(y_dim)))
         outputs = []
         prob_input = 1
         while random.random() < prob_input and possible_inputs:

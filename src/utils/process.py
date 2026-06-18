@@ -13,8 +13,8 @@ def get_options(args=None):
     parser.add_argument('--generations', type=int, default=200, help='Number of generations being evolved')
     parser.add_argument('--start_from_transformer', action='store_true', help='Indicates if evolution starts from transformer architecture'
                         ' instead of randomly generated parents')
-    parser.add_argument('--x_dim', type=int, default=24, help='Size of X dimension of the grid')
-    parser.add_argument('--y_dim', type=int, default=3, help='Size of Y dimension of the grid')
+    parser.add_argument('--x_dim', type=int, default=15, help='Size of X dimension of the grid')
+    parser.add_argument('--y_dim', type=int, default=5, help='Size of Y dimension of the grid')
    
    
     parser.add_argument('--graph_size', type=int, default=10, help="The size of the problem graph")
