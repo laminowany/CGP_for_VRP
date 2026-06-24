@@ -55,6 +55,9 @@ def evaluate(opts, model, logger: Logger, osobnik_id = None, snapshots_epochs=[]
             scores.append(score)
         except TimeoutError:
             return None
+        except torch.OutOfMemoryError:
+            torch.cuda.empty_cache()
+            return None
         end = time.perf_counter()
         logger.record(
                 epoch=epoch,
