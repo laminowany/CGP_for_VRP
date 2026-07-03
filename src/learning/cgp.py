@@ -376,9 +376,8 @@ class CGP_Net(nn.Module):
         return Gene(pos, type, inputs, args)
     
     
-    def mutate_gene_inputs(self, x, y):
+    def mutate_gene_inputs(self, x, y, opts):
         pos = self.get_global_idx(x, y)
-        orig_inputs = self.genes[pos].inputs.copy()
         type = self.genes[pos].type
         args = self.genes[pos].args
         
@@ -386,7 +385,14 @@ class CGP_Net(nn.Module):
         if x == 0:     
             possible_inputs = [0]
         else:
-            possible_inputs = list(map(lambda py: self.get_global_idx(x - 1, py) ,range(self.y_dim)))
+            if opts.deep_neural_connection:
+                possible_inputs = [
+                    self.get_global_idx(px, py)
+                    for px in range(x)
+                    for py in range(self.y_dim)
+                ]
+            else:
+                possible_inputs = list(map(lambda py: self.get_global_idx(x - 1, py), range(self.y_dim)))
         
         inputs = []  
         prob_input = 1
@@ -457,7 +463,7 @@ class CGP_Net(nn.Module):
         self.add_module(f"node_{gene.pos}", net)
         return CGP_Element(net, output_dim)
     
-    def produce_offspring(self, n, opts):
+    def produce_offspring(self, n, opts, remaining_budget):
         children = []
         parent_genome = self.genome
 
@@ -469,16 +475,26 @@ class CGP_Net(nn.Module):
                 if not self.genes[pos]:
                     new_gene = self.spawn_random_gene(x, y)
                     genome[pos - 1] = new_gene.encode()
-        
-            pos = random.randint(1, len(parent_genome) - 1)
-            x, y = self.to_xy(pos)
-            if pos == len(parent_genome) - 1:
-                genome[pos] = self.mutate_gene_inputs(x, y).encode()
-            else:    
-                if random.random() < (self.y_dim / (self.y_dim + GENE_TYPES_LEN)) and x != 0:
-                    genome[pos] = self.mutate_gene_inputs(x, y).encode()
-                else:
-                    genome[pos] = self.mutate_gene_type(x, y).encode()
+                    
+            k = 3  # agresywność decay
+            t = remaining_budget / opts.budget
+            decay = math.exp(-k * (1 - t))
+            mutations_num = max(1, int(0.5 * (len(parent_genome) - 2) * decay))
+            # mutations_num = max(1, int(0.5 *
+            #                            (len(parent_genome) -  2) * 
+            #                            (remaining_budget / opts.budget)))
+            print(f'mutating {mutations_num} genes')
+            mutations = random.sample(range(1, len(parent_genome)), mutations_num)
+            for pos in mutations:
+                #pos = random.randint(1, len(parent_genome) - 1)
+                x, y = self.to_xy(pos)
+                if pos == len(parent_genome) - 1:
+                    genome[pos] = self.mutate_gene_inputs(x, y, opts).encode()
+                else:    
+                    if random.random() < (self.y_dim / (self.y_dim + GENE_TYPES_LEN)) and x != 0:
+                        genome[pos] = self.mutate_gene_inputs(x, y, opts).encode()
+                    else:
+                        genome[pos] = self.mutate_gene_type(x, y).encode()
         
             child = CGP_Net(
                 opts=self.opts,

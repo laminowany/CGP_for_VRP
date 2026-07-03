@@ -133,7 +133,23 @@ def run(opts):
     # opts.y_lim = 1
     # opts.n_epochs = 1
     # opts.epoch_size = 1
-    # parent = AttentionModel(opts, CGP_Net.random_genome(opts, opts.x_dim, opts.y_dim))
+    # model = AttentionModel(opts,  CGP_Net(
+    #         opts = opts,
+    #         x_dim = opts.x_dim,
+    #         y_dim = opts.y_dim,
+    #         genome = [None, (4, 0), (2, 16), (1, 62), (6, 48), (7, 19), (1, 50), (1, 51), 
+    #                   (4, 52), (4, 23), (4, 24), (5, (40, 55)), (3, 41, 1), (6, 72), (2, 28),
+    #                   (4, 74), (7, 0), (6, 16), (3, 62, 1), (7, 3), (3, 64, 1), (4, 65),
+    #                   (3, 36, 0), (2, 67), (1, 68), (2, 39), (3, 10, 1), (3, 71, 1), (6, 27),
+    #                   (7, 73), (2, 44), (3, 0, 1), (1, 31), (1, 32), (7, 33), (1, 4), (1, 65), 
+    #                   (4, 51), (6, 37), (5, 38), (7, 9), (7, 40), (2, 71), (4, 12), (4, 43), 
+    #                   (3, 14, -1), (6, 0), (7, 1), (7, 32), (6, 48), (5, 4), (3, 35, 1), (6, 21),
+    #                   (5, (37, 7)), (7, 8), (7, 54), (2, 25), (7, 71), (1, 12), (6, 28), (6, 44),
+    #                   (2, 0), (7, 31), (7, 17), (4, 18), (2, 64), (2, 50), (2, 36), (4, 67), 
+    #                   (1, 8), (1, 9), (5, (40, 55)), (1, 26), (6, 57), (7, 58), (5, 59), (5, (45, 60, 75, 15))]
+    #     ))
+    # result = evaluate(opts, model, logger, osobnik_id)
+    # return
     # while True:
     #     export_cgp_to_graphviz(parent.get_encoder().genes, opts, os.path.join(opts.parents_out_dir, f"_PARENT_{osobnik_id}"), only_active=True)
     #     logger.record(key="children", osobnik_id=osobnik_id, genome=parent.get_encoder().genome)
@@ -197,16 +213,15 @@ def run(opts):
             export_cgp_to_graphviz(first_parent.get_encoder().genes, opts, os.path.join(opts.genomes_full_out_dir, f"_PARENT_{osobnik_id}"), only_active=False)
             export_cgp_to_graphviz(first_parent.get_encoder().genes, opts, os.path.join(opts.genomes_active_out_dir, f"_PARENT_{osobnik_id}"), only_active=True)
             hashkey = hash(first_parent.get_encoder()) 
-            result = evaluate(opts, first_parent, logger, osobnik_id, snapshots_epochs=[opts.n_epochs])
+            result = evaluate(opts, first_parent, logger, osobnik_id)
             if result:    
                 scores[osobnik_id] =  result.scores[-1]
-                snapshots[osobnik_id] = result.snapshots[0]
                 result_cache[hashkey] = scores[osobnik_id]
                 
                 best_score = scores[osobnik_id]
                 best_model = first_parent
                 best_id = osobnik_id
-                best_weights = snapshots[best_id]
+                best_weights = first_parent.get_encoder().save_snapshot()
                 
                 osobnik_id += 1
         
@@ -246,7 +261,7 @@ def run(opts):
     budget = opts.budget
     #while generation <= opts.generations:  
     while budget > 0:
-        children = parent.get_encoder().produce_offspring(children_limit, opts)
+        children = parent.get_encoder().produce_offspring(children_limit, opts, budget)
         export_cgp_to_graphviz(parent.get_encoder().genes, opts, os.path.join(opts.genomes_full_out_dir, f"{generation}__PARENT"), only_active=False)
         export_cgp_to_graphviz(parent.get_encoder().genes, opts, os.path.join(opts.genomes_active_out_dir, f"{generation}__PARENT"), only_active=True)
         
