@@ -434,7 +434,7 @@ class CGP_Net(nn.Module):
             net = Normalization(first_input_dim)
         elif gene.type == 3:
             scaling = gene.args[0]
-            if scaling == 1 and first_input_dim <= 2048:
+            if scaling == 1 and first_input_dim <= 1024:
                 output_dim = first_input_dim * 4
                 net = nn.Linear(first_input_dim, output_dim)
             elif scaling == -1 and first_input_dim >= 32:
@@ -567,17 +567,14 @@ class CGP_Net(nn.Module):
         res = []
         for pos in range(1, self.len):
             gene = self.genes[pos]
-
             if not gene or not gene.active:
                 continue
-
             res.append((
                 pos,
                 gene.type,
                 tuple(sorted(gene.inputs)),
                 tuple(gene.args)
-            ))
-        
+            ))     
         return hash((
             tuple(res)
         ))

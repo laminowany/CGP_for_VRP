@@ -136,9 +136,9 @@ def train_epoch(model, optimizer, baseline, lr_scheduler, epoch, val_dataset, op
             batch,
             opts
         )
-        execution_time = time.perf_counter() - start
-        if execution_time > opts.epoch_time_limit:
-            raise TimeoutError
+        # execution_time = time.perf_counter() - start
+        # if execution_time > opts.epoch_time_limit:
+        #     raise TimeoutError
         step += 1
 
     #epoch_duration = time.time() - start_time
