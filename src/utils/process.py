@@ -1,19 +1,30 @@
 import argparse
+from enum import Enum
 import os
+from pathlib import Path
 import random
 import time
 import torch
+
+class Mode(str, Enum):
+    CGP = "cgp"
+    RANDOM_SEARCH = "random_search"
+    FULL_EVALUATION = "full_evaluation"
+    EVOLVE_TRANSFORMER = "evolve_transformer"
 
 def get_options(args=None):
     parser = argparse.ArgumentParser(
         description="Model of evolving architecture of GNN with CGP for CVRP")
 
+    parser.add_argument('--mode', choices = [m.value for m in Mode], default=Mode.CGP.value)
+    parser.add_argument('--genome_path', type=str, help='Path to dir with candidates metadata')
+    parser.add_argument('--id', type=int, default=None, help='Identifier of candidate to use')
     parser.add_argument('--seed', type=int, default=None, help='Random seed to use')
     parser.add_argument('--epoch_size', type=int, default=128000, help='Number of instances per epoch during training')
     parser.add_argument('--budget', type=int, default=200, help='Computational budget of architecture search')
     parser.add_argument('--start_from_transformer', action='store_true', help='Indicates if evolution starts from transformer architecture'
                         ' instead of randomly generated parents')
-    parser.add_argument('--random_search', action='store_true', help='Use random search instead of CGP')
+    parser.add_argument('--deep_neural_connection', action='store_true', help='Disable limiting the depth of nerual connections')
     parser.add_argument('--x_dim', type=int, default=15, help='Size of X dimension of the grid')
     parser.add_argument('--y_dim', type=int, default=5, help='Size of Y dimension of the grid')
    
@@ -77,6 +88,12 @@ def get_options(args=None):
     opts = parser.parse_args(args)
     if opts.seed is None:
         opts.seed = random.randint(0, 9999)
+        
+    if opts.mode == "full_evaluation":
+        if opts.genome_path is None:
+            parser.error("--genome_path is required in full_evaluation mode")
+        if opts.id is None:
+            parser.error("--id is required in full_evaluation mode")
         
     # CUSTOM SENEGAS
     opts.baseline = 'rollout'

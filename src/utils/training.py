@@ -19,9 +19,9 @@ class EvaluationResult:
     snapshots: list
     
 
-def evaluate(opts, model, logger: Logger, osobnik_id = None, snapshots_epochs=[]) -> EvaluationResult:
-    if not osobnik_id:
-        osobnik_id = 0
+def evaluate(opts, model, logger: Logger, candidate_id = None, snapshots_epochs=[]) -> EvaluationResult:
+    if not candidate_id:
+        candidate_id = 0
 
     baseline = RolloutBaseline(model, opts)
     baseline = WarmupBaseline(baseline, opts.bl_warmup_epochs, warmup_exp_beta=opts.exp_beta)
@@ -61,14 +61,14 @@ def evaluate(opts, model, logger: Logger, osobnik_id = None, snapshots_epochs=[]
         end = time.perf_counter()
         logger.record(
                 epoch=epoch,
-                osobnik=osobnik_id,
+                id=candidate_id,
                 score=score,
                 time=end-start
         )
         if epoch in snapshots_epochs:
             snapshot = model.state_dict()
             snapshots.append(snapshot)
-            filename = os.path.join(opts.save_dir, f'snapshot_osobnik{osobnik_id}_epoch{epoch}.pth')
+            filename = os.path.join(opts.save_dir, f'snapshot_candidate_{candidate_id}_epoch{epoch}.pth')
             torch.save(snapshot, filename)
     return EvaluationResult(scores, snapshots)
 

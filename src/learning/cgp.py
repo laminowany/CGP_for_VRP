@@ -219,12 +219,12 @@ GENE_TYPES_LEN = 7
 
 # (TYP, (INPUTY), (PARAMS))
 class CGP_Net(nn.Module):
-    def __init__(self, opts, x_dim, y_dim, genome): 
+    def __init__(self, opts, genome): 
         super().__init__()
         self.num_heads = 8
         self.feed_forward_hidden = 512
-        self.x_dim = x_dim
-        self.y_dim = y_dim
+        self.x_dim = opts.x_dim
+        self.y_dim = opts.y_dim
         self.len = self.x_dim * self.y_dim + 2
         self.opts = opts
         self.embed_dim = opts.embedding_dim
@@ -476,13 +476,10 @@ class CGP_Net(nn.Module):
                     new_gene = self.spawn_random_gene(x, y)
                     genome[pos - 1] = new_gene.encode()
                     
-            k = 3  # agresywność decay
+            k = 3  # decay speed
             t = remaining_budget / opts.budget
             decay = math.exp(-k * (1 - t))
             mutations_num = max(1, int(0.5 * (len(parent_genome) - 2) * decay))
-            # mutations_num = max(1, int(0.5 *
-            #                            (len(parent_genome) -  2) * 
-            #                            (remaining_budget / opts.budget)))
             print(f'mutating {mutations_num} genes')
             mutations = random.sample(range(1, len(parent_genome)), mutations_num)
             for pos in mutations:
@@ -498,16 +495,16 @@ class CGP_Net(nn.Module):
         
             child = CGP_Net(
                 opts=self.opts,
-                x_dim=self.x_dim,
-                y_dim=self.y_dim,
                 genome=genome
             )
             children.append(child)
         return children
     
     @staticmethod
-    def random_genome(opts, x_dim, y_dim):
+    def random_genome(opts):
         dummy = CGP_Net.__new__(CGP_Net)
+        x_dim = opts.x_dim
+        y_dim = opts.y_dim
         dummy.x_dim = x_dim
         dummy.y_dim = y_dim
         length = x_dim * y_dim
