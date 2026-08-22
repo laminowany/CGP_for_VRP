@@ -240,6 +240,8 @@ def run_genome_evaluation(opts, logger):
     if opts.genome_name not in genomes:
         raise Exception(f"Architecture {opts.genome_name} not found")
     
+    export_cgp_to_graphviz( AttentionModel(opts,genomes[opts.genome_name]).get_encoder().genes, opts, os.path.join(opts.save_dir, f"candidate"), only_active=True)
+    
     evaluate(opts, logger, genomes[opts.genome_name])
 
 def run_cgp(opts, logger):
