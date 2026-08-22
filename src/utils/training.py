@@ -1,14 +1,17 @@
+import csv
 from dataclasses import dataclass
 import os
 import time
 import torch
 import math
+from torch.nn import DataParallel
 import torch.optim as optim
 import random
 
 from tqdm import tqdm
 from torch.utils.data import DataLoader
-from learning.reinforce_baselines import RolloutBaseline, WarmupBaseline
+from learning.attention_model import AttentionModel
+from learning.reinforce_baselines import RolloutBaseline, WarmupBaseline, get_inner_model
 from utils.logger import Logger
 from utils.misc import move_to
 from learning.problem_vrp import CVRP
@@ -17,12 +20,14 @@ from learning.problem_vrp import CVRP
 class EvaluationResult:
     scores: list
     snapshots: list
-    
 
-def evaluate(opts, model, logger: Logger, candidate_id = None, snapshots_epochs=[]) -> EvaluationResult:
+def evaluate(opts, logger: Logger, encoder_genome = None, candidate_id = None) -> EvaluationResult:
     if not candidate_id:
         candidate_id = 0
+        
+    torch.manual_seed(opts.seed)
 
+    model = AttentionModel(opts, encoder_genome)
     baseline = RolloutBaseline(model, opts)
     baseline = WarmupBaseline(baseline, opts.bl_warmup_epochs, warmup_exp_beta=opts.exp_beta)
     optimizer = optim.Adam(
@@ -40,7 +45,7 @@ def evaluate(opts, model, logger: Logger, candidate_id = None, snapshots_epochs=
     
     snapshots = []
     scores = []
-    for epoch in range(opts.epoch_start + 1, opts.epoch_start + opts.n_epochs + 1):
+    for epoch in range(opts.epoch_start, opts.epoch_start + opts.n_epochs):
         start = time.perf_counter()
         try:
             score = train_epoch(
@@ -65,11 +70,6 @@ def evaluate(opts, model, logger: Logger, candidate_id = None, snapshots_epochs=
                 score=score,
                 time=end-start
         )
-        if epoch in snapshots_epochs:
-            snapshot = model.state_dict()
-            snapshots.append(snapshot)
-            filename = os.path.join(opts.save_dir, f'snapshot_candidate_{candidate_id}_epoch{epoch}.pth')
-            torch.save(snapshot, filename)
     return EvaluationResult(scores, snapshots)
 
 def validate(model, dataset, opts):
@@ -136,35 +136,44 @@ def train_epoch(model, optimizer, baseline, lr_scheduler, epoch, val_dataset, op
             batch,
             opts
         )
-        # execution_time = time.perf_counter() - start
-        # if execution_time > opts.epoch_time_limit:
-        #     raise TimeoutError
         step += 1
-
-    #epoch_duration = time.time() - start_time
-    #print("Finished epoch {}, took {} s".format(epoch, time.strftime('%H:%M:%S', time.gmtime(epoch_duration))))
-
-    # if epoch == opts.n_epochs - 1:
-    #     dest =  os.path.join(opts.save_dir, 'epoch-{}.pt'.format(epoch))
-    #     print(f'Saving model and state... to {dest}')
-    #     torch.save(
-    #     {
-    #         'model': model,
-    #         'optimizer': optimizer.state_dict(),
-    #         'rng_state': torch.get_rng_state(),
-    #         'cuda_rng_state': torch.cuda.get_rng_state_all(),
-    #         'baseline': baseline.state_dict()
-    #     },
-    #     os.path.join(opts.save_dir, 'epoch-{}.pt'.format(epoch))
-    # )
+    
+    if epoch == opts.n_epochs - 1:
+        print('Saving model and state...')
+        torch.save(
+            {
+                'model': get_inner_model(model).state_dict(),
+                'optimizer': optimizer.state_dict(),
+                'rng_state': torch.get_rng_state(),
+                'cuda_rng_state': torch.cuda.get_rng_state_all(),
+                'baseline': baseline.state_dict()
+            },
+            os.path.join(opts.save_dir, 'epoch-{}.pt'.format(epoch))
+        )
 
     avg_reward = validate(model, val_dataset, opts)
+    print(f'epoch {epoch}, score {avg_reward}')
+    csv_path = os.path.join(opts.save_dir, "validation_scores.csv")
+    file_exists = os.path.exists(csv_path)
+    with open(csv_path, "a", newline="") as f:
+        writer = csv.writer(f)
+
+        if not file_exists:
+            writer.writerow(["epoch", "score"])
+
+        writer.writerow([
+            epoch,
+            float(avg_reward)
+        ])
     baseline.epoch_callback(model, epoch)
     # lr_scheduler should be called at end of epoch
     lr_scheduler.step()
     return avg_reward
 
-
+def set_decode_type(model, decode_type):
+    if isinstance(model, DataParallel):
+        model = model.module
+    model.set_decode_type(decode_type)
 
 def train_batch(
         model,

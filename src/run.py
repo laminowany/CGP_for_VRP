@@ -31,31 +31,7 @@ def reset_seeds(opts):
     random.seed(opts.seed)
     torch.manual_seed(opts.seed)
     
-def produce_reference(row, times):
-    idx = (row - 1) * 8 * times
-    res = []
-    init = 0
-    for t in range(times):
-        res.append((4, init))
-        idx += 1
-        res.append((5, (init, idx)))
-        idx += 1
-        res.append((2, idx))
-        idx += 1
-        res.append((3, idx, 1))
-        idx += 1
-        res.append((7, idx))
-        idx += 1
-        res.append((3, idx, -1))
-        idx += 1
-        res.append((5, (idx - 3, idx)))
-        idx += 1
-        res.append((2, idx))
-        idx += 1
-        init = idx
-    return res    
-
-def produce_transformer_encoder(opts):
+def produce_transformer_genome(opts):
     if opts.x_dim < 8:
         raise Exception("For transformer to fit it genotype the x_dim must have at least 8 length")
     to_global_idx = lambda x, y, opts: opts.x_dim * opts.y_dim + 1 if x == opts.x_dim else y * opts.x_dim + x + 1
@@ -86,9 +62,7 @@ def produce_transformer_encoder(opts):
         prev_pos = pos + 7
         x = x + 8
     
-    model = AttentionModel(opts, CGP_Net(opts, genome))
-    #export_cgp_to_graphviz(model.get_encoder().genes, opts, os.path.join(opts.save_dir, f"TRANSFORMER"), only_active=False)
-    return model
+    return genome
 
 def verify_sanity(opts, logger: Logger):
     orig_epochs = opts.n_epochs
@@ -100,20 +74,14 @@ def verify_sanity(opts, logger: Logger):
     opts.epoch_size = 1
     opts.graph_size = 10   
     reset_seeds(opts)
-    original_encoder = GraphAttentionEncoder(
-        n_heads=opts.n_heads,
-        embed_dim=opts.embedding_dim,
-        n_layers=opts.n_encode_layers,
-        normalization=opts.normalization
-    )
-    model_original = AttentionModel(opts, original_encoder)
-    score_original_encoder = evaluate(opts, model_original, logger, candidate_id=-1)
+    score_original_encoder = evaluate(opts, logger, candidate_id=-2)
     reset_seeds(opts)
-    opts.x_dim = 24
-    modelCGP = produce_transformer_encoder(opts)
-    logger.record(key="candidates", id=0, genome=modelCGP.get_encoder().genome)
-    export_cgp_to_graphviz(modelCGP.get_encoder().genes, opts, os.path.join(opts.save_dir, f"TRANSFORMER"), only_active=False)
-    score_cgp = evaluate(opts, modelCGP, logger, candidate_id=-2)
+    opts.x_dim = 8
+    transformer_genome = produce_transformer_genome(opts)
+    logger.record(key="candidates", id=0, genome=transformer_genome)
+    # export_cgp_to_graphviz(modelCGP.get_encoder().genes, opts, os.path.join(opts.save_dir, f"TRANSFORMER"), only_active=False)
+    # export_cgp_to_graphviz(modelCGP.get_encoder().genes, opts, os.path.join(opts.save_dir, f"TRANSFORMER_ACTIVE"), only_active=True)
+    score_cgp = evaluate(opts, logger, transformer_genome, candidate_id=-1)
     if score_original_encoder != score_cgp:
         raise Exception("CARAMBA!")
     print("ALL GOOD BOSS")
@@ -124,7 +92,7 @@ def verify_sanity(opts, logger: Logger):
     opts.x_dim = orig_x_dim
 
 def run_transformer_evolution(opts, logger):
-    first_parent = produce_transformer_encoder(opts)
+    first_parent = AttentionModel(opts, CGP_Net(opts, produce_transformer_genome(opts)))
 
     children_limit = 4
     osobnik_id = 1
@@ -260,6 +228,19 @@ def run_full_evaluation(opts, logger):
     reset_seeds(opts)
     evaluate(opts, model, logger, opts.id, snapshots_epochs=[opts.n_epochs])
 
+def run_genome_evaluation(opts, logger):
+    if not opts.genome_name:
+        raise Exception("Please specify name of architecture with --genome_name")
+    genomes = {
+        "TRANS1" : [None, (1, 0), (1, 1), (1, 2), (1, 3), (1, 4), (1, 5), (1, 6), (1, 7), (1, 0), (1, 9), (1, 10), (1, 19), (1, 12), (1, 13), (1, 14), (1, 15), (4, 0), (5, (9, 17)), (2, 18), (3, 19, 1), (7, 20), (3, 21, -1), (5, (14, 22)), (2, 23), (1, 0), (1, 25), (1, 26), (1, 27), (1, 28), (1, 29), (1, 30), (1, 31), (1, 0), (1, 33), (1, 34), (1, 35), (1, 36), (1, 37), (1, 38), (1, 39), (5, 24)],
+        "EVO1" : [None, (7, 0), (2, 25), (4, 34), (3, 19, -1), (5, (4, 28)), (5, 21), (1, 22), (1, 31), (4, 0), (4, 9), (4, 2), (1, 19), (3, 28, -1), (1, 37), (7, 14), (6, 39), (5, 0), (5, (25, 33, 1)), (2, 18), (3, 19, 1), (2, 28), (7, 29), (1, 38), (5, 31), (5, 0), (4, 1), (4, 26), (1, 19), (6, 28), (5, 29), (2, 22), (2, 15), (4, 0), (5, 25), (3, 34, 0), (7, 35), (5, 28), (4, 21), (2, 14), (6, 39), (5, 32)],
+        "EVO2": [None, (1, 0), (6, 25), (3, 26, 0), (2, 35), (4, 28), (5, 21), (6, 38), (7, 15), (5, 0), (4, 25), (4, 18), (2, 19), (7, 12), (1, 37), (6, 14), (1, 15), (4, 0), (5, (9, 17)), (2, 18), (1, 19), (7, 20), (4, 21), (6, 38), (4, 7), (2, 0), (4, 1), (3, 26, 1), (3, 35, 1), (4, 4), (1, 21), (2, 30), (5, 31), (1, 0), (4, 25), (5, 26), (2, 3), (6, 28), (3, 13, 0), (5, 22), (1, 39), (5, 32)],
+        "EVO10": [None, (5, 0), (3, 1, 1), (7, 10), (4, 35), (3, 36, 1), (2, 37), (5, (22, 30, 14)), (6, 7), (2, 0), (7, 1), (7, 26), (7, 19), (3, 12, 1), (3, 37, 0), (6, 38), (3, 39, 1), (4, 0), (5, (9, 17)), (3, 18, 0), (4, 27), (7, 12), (7, 13), (7, 30), (2, 23), (2, 0), (1, 25), (6, 2), (3, 27, 1), (1, 12), (1, 21), (2, 22), (4, 7), (1, 0), (6, 33), (7, 26), (1, 3), (2, 4), (6, 37), (2, 38), (7, 15), (5, 24)],
+    }
+    if opts.genome_name not in genomes:
+        raise Exception(f"Architecture {opts.genome_name} not found")
+    
+    evaluate(opts, logger, genomes[opts.genome_name])
 
 def run_cgp(opts, logger):
     opts.debug = False
@@ -378,6 +359,7 @@ def plot_best_genome(run_dir):
             if int(row["id"]) == best_id:
                 genome = ast.literal_eval(row["genome"])
                 net = CGP_Net(opts, genome)
+                print(f'saving to {os.path.join(run_dir, f"cgp10")}')
                 export_cgp_to_graphviz(net.genes, opts, os.path.join(run_dir, f"cgp10"), only_active=True)
                 return best_id, genome
     print( os.path.join(run_dir, f"parent"))
@@ -386,44 +368,40 @@ def plot_best_genome(run_dir):
 
 
 def verify_sanity2(opts, logger: Logger):
-    opts.n_epochs = 10
-    opts.n_encode_layers = 1
-    opts.epoch_size = 12800
-    opts.graph_size = 10   
     #reset_seeds(opts)
     
     torch.manual_seed(opts.seed)
-    original_encoder = GraphAttentionEncoder(
-        n_heads=opts.n_heads,
-        embed_dim=opts.embedding_dim,
-        n_layers=opts.n_encode_layers,
-        normalization=opts.normalization
-    )
-    model_original = AttentionModel(opts, original_encoder)
-    score_original_encoder = evaluate(opts, model_original, logger, candidate_id=-1)
+    # evo1 =  CGP_Net(opts, genome=[None, (7, 0), (2, 25), (4, 34), (3, 19, -1), (5, (4, 28)), (5, 21), (1, 22), (1, 31), (4, 0), (4, 9), (4, 2), 
+    #     (1, 19), (3, 28, -1), (1, 37), (7, 14), (6, 39), (5, 0), (5, (25, 33, 1)), (2, 18), (3, 19, 1), (2, 28), 
+    #     (7, 29), (1, 38), (5, 31), (5, 0), (4, 1), (4, 26), (1, 19), (6, 28), 
+    #     (5, 29), (2, 22), (2, 15), (4, 0), (5, 25), (3, 34, 0), (7, 35), (5, 28), (4, 21), (2, 14), (6, 39), (5, 32)])
+
+    # original_encoder = GraphAttentionEncoder(
+    #     n_heads=opts.n_heads,
+    #     embed_dim=opts.embedding_dim,
+    #     n_layers=opts.n_encode_layers,
+    #     normalization=opts.normalization
+    # )
+   # model_original = AttentionModel(opts, evo1)
+    model = AttentionModel(opts).to(opts.device)
+    score_original_encoder = evaluate(opts, logger)
    
 
 if __name__ == "__main__":
-    # opts = get_options()
-    # bestid, genome = plot_best_genome("/home/piotr/repos/magisterka/outputs/run_20260721T194140_RUN_EVO_EXP_DECAY_10")
-    # print("Best ID:", bestid)
-    # #print("Genome:", genome)
-    # exit()
-    
-    
     opts = get_options()
     initial_setup(opts)
     logger = Logger(opts)
-    verify_sanity2(opts, logger)
-    # verify_sanity(opts, logger)
+    #verify_sanity(opts, logger)
     
-    # if opts.mode == "cgp":    
-    #     run_cgp(opts, logger)
-    # elif opts.mode == "random_search":
-    #     run_random_search(opts, logger)
-    # elif opts.mode == "full_evaluation":
-    #     run_full_evaluation(opts, logger)
-    # elif opts.mode == "evolve_transformer":
-    #     run_transformer_evolution(opts, logger)
-    # elif opts.mode == "generate_validation_data":
-    #     run_generate_validation_data(opts)
+    if opts.mode == "cgp":    
+        run_cgp(opts, logger)
+    elif opts.mode == "random_search":
+        run_random_search(opts, logger)
+    elif opts.mode == "full_evaluation":
+        run_full_evaluation(opts, logger)
+    elif opts.mode == "evolve_transformer":
+        run_transformer_evolution(opts, logger)
+    elif opts.mode == "generate_validation_data":
+        run_generate_validation_data(opts)
+    elif opts.mode == "genome_evaluation":
+        run_genome_evaluation(opts, logger)

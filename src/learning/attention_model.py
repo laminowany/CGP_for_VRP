@@ -3,6 +3,7 @@ import os
 import torch
 from torch import nn
 from typing import NamedTuple
+from learning.cgp import CGP_Net
 from utils.beam_search import CachedLookup
 from torch.utils.checkpoint import checkpoint
 from utils.misc import sample_many
@@ -34,11 +35,11 @@ class AttentionModel(nn.Module):
      
     def __init__(self,
                  opts,
-                 encoder,):
+                 encoder_genome = None,):
         super(AttentionModel, self).__init__()
         self.embedding_dim = opts.embedding_dim
         self.hidden_dim =  opts.hidden_dim
-        self.embedder  = encoder
+
         self.n_encode_layers = opts.n_encode_layers
         self.decode_type = None
         self.temp = 1.0
@@ -60,6 +61,17 @@ class AttentionModel(nn.Module):
         # Special embedding projection for depot node
         self.init_embed_depot = nn.Linear(2,  self.embedding_dim)
         self.init_embed = nn.Linear(node_dim, self.embedding_dim)
+        self.normalization = 'batch'
+        
+        if encoder_genome:    
+            self.embedder = CGP_Net(opts, encoder_genome) 
+        else:
+            self.embedder = GraphAttentionEncoder(
+                        n_heads=self.n_heads,
+                        embed_dim=self.embedding_dim ,
+                        n_layers=self.n_encode_layers,
+                        normalization=self.normalization
+                    )
 
         # For each node we compute (glimpse key, glimpse value, logit key) so 3 * embedding_dim
         self.project_node_embeddings = nn.Linear(self.embedding_dim, 3 * self.embedding_dim, bias=False)

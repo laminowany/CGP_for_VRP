@@ -14,16 +14,19 @@ class Mode(str, Enum):
     FULL_EVALUATION = "full_evaluation"
     EVOLVE_TRANSFORMER = "evolve_transformer"
     GENERATE_VALIDATION_DATA = "generate_validation_data"
+    GENOME_EVALUATION = "genome_evaluation" 
 
 def get_options(args=None):
     parser = argparse.ArgumentParser(
         description="Model of evolving architecture of GNN with CGP for CVRP")
-
+    parser.add_argument('--problem', default='cvrp', help="The problem to solve, default 'tsp'")
+    parser.add_argument('--model', default='attention', help="Model, 'attention' (default) or 'pointer'")
     parser.add_argument('--mode', choices = [m.value for m in Mode], default=Mode.CGP.value)
     parser.add_argument('--genome_path', type=str, help='Path to dir with candidates metadata')
+    parser.add_argument('--genome_name', type=str, help='Name of predefined architecture')
     parser.add_argument('--id', type=int, default=None, help='Identifier of candidate to use')
-    parser.add_argument('--seed', type=int, default=None, help='Random seed to use')
-    parser.add_argument('--epoch_size', type=int, default=128000, help='Number of instances per epoch during training')
+    parser.add_argument('--seed', type=int, default=1234, help='Random seed to use')
+    parser.add_argument('--epoch_size', type=int, default=1280000, help='Number of instances per epoch during training')
     parser.add_argument('--budget', type=int, default=200, help='Computational budget of architecture search')
     parser.add_argument('--start_from_transformer', action='store_true', help='Indicates if evolution starts from transformer architecture'
                         ' instead of randomly generated parents')
@@ -43,7 +46,7 @@ def get_options(args=None):
     # # Model
     parser.add_argument('--embedding_dim', type=int, default=128, help='Dimension of input embedding')
     parser.add_argument('--hidden_dim', type=int, default=128, help='Dimension of hidden layers in Enc/Dec')
-    parser.add_argument('--n_encode_layers', type=int, default=3,
+    parser.add_argument('--n_encode_layers', type=int, default=1,
                         help='Number of layers in the encoder/critic network')
     parser.add_argument('--tanh_clipping', type=float, default=10.,
                         help='Clip the parameters to within +- this value using tanh. '
@@ -54,7 +57,7 @@ def get_options(args=None):
     parser.add_argument('--lr_model', type=float, default=1e-4, help="Set the learning rate for the actor network")
     parser.add_argument('--lr_critic', type=float, default=1e-4, help="Set the learning rate for the critic network")
     parser.add_argument('--lr_decay', type=float, default=1.0, help='Learning rate decay per epoch')
-    parser.add_argument('--n_epochs', type=int, default=10, help='The number of epochs to train')
+    parser.add_argument('--n_epochs', type=int, default=100, help='The number of epochs to train')
 
     parser.add_argument('--max_grad_norm', type=float, default=1.0,
                         help='Maximum L2 norm for gradient clipping, default 1.0 (0 to disable clipping)')
@@ -85,7 +88,7 @@ def get_options(args=None):
     parser.add_argument('--no_progress_bar', action='store_true', help='Disable progress bar')
 
     parser.add_argument('--log_dir', default='../logs', help='Directory to write TensorBoard information to')
-    parser.add_argument('--run_name', default='run', help='Name to identify the run')
+    parser.add_argument('--run_name', default='', type=str, help='Name to identify the run')
     parser.add_argument('--output_dir', default='outputs', help='Directory to write output models to')
     
 
@@ -118,7 +121,7 @@ def get_options(args=None):
     
     opts.use_cuda = torch.cuda.is_available() and not opts.no_cuda
     opts.device = torch.device("cuda:0" if opts.use_cuda else "cpu")
-    opts.run_name = "{}_{}".format(opts.run_name, time.strftime("%Y%m%dT%H%M%S"))
+    opts.run_name = "run_{}_{}".format(time.strftime("%Y%m%dT%H%M%S"), opts.run_name)
     opts.save_dir = os.path.join(
         opts.output_dir,
         opts.run_name
