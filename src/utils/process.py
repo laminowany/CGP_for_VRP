@@ -85,7 +85,7 @@ def get_options(args=None):
     parser.add_argument('--log_step', type=int, default=50, help='Log info every log_step steps')
     parser.add_argument('--epoch_start', type=int, default=0,
                         help='Start at epoch # (relevant for learning rate decay)')
-    parser.add_argument('--no_progress_bar', action='store_true', help='Disable progress bar')
+    parser.add_argument('--no_progress_bar', action='store_false', help='Disable progress bar')
 
     parser.add_argument('--log_dir', default='../logs', help='Directory to write TensorBoard information to')
     parser.add_argument('--run_name', default='', type=str, help='Name to identify the run')
@@ -108,7 +108,7 @@ def get_options(args=None):
         
     # CUSTOM SENEGAS
     opts.baseline = 'rollout'
-    opts.no_progress_bar = True
+    opts.no_progress_bar = False
     opts.n_heads = 8
 
     opts.epoch_time_limit = 10*60 # 10 minut

@@ -115,7 +115,7 @@ def clip_grad_norms(param_groups, max_norm=math.inf):
 
 
 def train_epoch(model, optimizer, baseline, lr_scheduler, epoch, val_dataset, opts):
-    #print("Start train epoch {}, lr={} for run {}".format(epoch, optimizer.param_groups[0]['lr'], opts.run_name))
+    print("Start train epoch {}, lr={} for run {}".format(epoch, optimizer.param_groups[0]['lr'], opts.run_name))
     step = epoch * (opts.epoch_size // opts.batch_size)
     start_time = time.time()
 
@@ -137,6 +137,8 @@ def train_epoch(model, optimizer, baseline, lr_scheduler, epoch, val_dataset, op
             opts
         )
         step += 1
+    epoch_duration = time.time() - start_time
+    print("Finished epoch {}, took {} s".format(epoch, time.strftime('%H:%M:%S', time.gmtime(epoch_duration))))
     
     if epoch == opts.n_epochs - 1:
         print('Saving model and state...')
