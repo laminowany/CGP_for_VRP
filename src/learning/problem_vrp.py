@@ -246,27 +246,30 @@ def make_instance(args):
 
 class VRPDataset(Dataset):
     
-    def __init__(self, size=50, num_samples=1000000):
+    def __init__(self, size=50, num_samples=1000000, data=None):
         super(VRPDataset, self).__init__()
 
-        self.data_set = []
-        # From VRP with RL paper https://arxiv.org/abs/1802.04240
-        CAPACITIES = {
-            10: 20.,
-            20: 30.,
-            50: 40.,
-            100: 50.
-        }
-
-        self.data = [
-            {
-                'loc': torch.FloatTensor(size, 2).uniform_(0, 1),
-                # Uniform 1 - 9, scaled by capacities
-                'demand': (torch.FloatTensor(size).uniform_(0, 9).int() + 1).float() / CAPACITIES[size],
-                'depot': torch.FloatTensor(2).uniform_(0, 1)
+        if data is not None:
+            self.data = data
+        else:
+            self.data_set = []
+            # From VRP with RL paper https://arxiv.org/abs/1802.04240
+            CAPACITIES = {
+                10: 20.,
+                20: 30.,
+                50: 40.,
+                100: 50.
             }
-            for i in range(num_samples)
-        ]
+
+            self.data = [
+                {
+                    'loc': torch.FloatTensor(size, 2).uniform_(0, 1),
+                    # Uniform 1 - 9, scaled by capacities
+                    'demand': (torch.FloatTensor(size).uniform_(0, 9).int() + 1).float() / CAPACITIES[size],
+                    'depot': torch.FloatTensor(2).uniform_(0, 1)
+                }
+                for _ in range(num_samples)
+            ]
 
         self.size = len(self.data)
 
@@ -275,3 +278,6 @@ class VRPDataset(Dataset):
 
     def __getitem__(self, idx):
         return self.data[idx]
+    
+    def save(self, path):
+        torch.save(self.data, path)

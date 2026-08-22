@@ -2,6 +2,7 @@ import ast
 import csv
 import gc
 import os
+from pathlib import Path
 import torch
 import random
 
@@ -86,7 +87,7 @@ def produce_transformer_encoder(opts):
         x = x + 8
     
     model = AttentionModel(opts, CGP_Net(opts, genome))
-    export_cgp_to_graphviz(model.get_encoder().genes, opts, os.path.join(opts.save_dir, f"TRANSFORMER"), only_active=False)
+    #export_cgp_to_graphviz(model.get_encoder().genes, opts, os.path.join(opts.save_dir, f"TRANSFORMER"), only_active=False)
     return model
 
 def verify_sanity(opts, logger: Logger):
@@ -110,7 +111,8 @@ def verify_sanity(opts, logger: Logger):
     reset_seeds(opts)
     opts.x_dim = 24
     modelCGP = produce_transformer_encoder(opts)
-    export_cgp_to_graphviz(modelCGP.get_encoder().genes, opts, os.path.join(opts.save_dir, f"TRANSFORMER_OLD"), only_active=False)
+    logger.record(key="candidates", id=0, genome=modelCGP.get_encoder().genome)
+    export_cgp_to_graphviz(modelCGP.get_encoder().genes, opts, os.path.join(opts.save_dir, f"TRANSFORMER"), only_active=False)
     score_cgp = evaluate(opts, modelCGP, logger, candidate_id=-2)
     if score_original_encoder != score_cgp:
         raise Exception("CARAMBA!")
@@ -123,7 +125,7 @@ def verify_sanity(opts, logger: Logger):
 
 def run_transformer_evolution(opts, logger):
     first_parent = produce_transformer_encoder(opts)
-    
+
     children_limit = 4
     osobnik_id = 1
     scores = {}
@@ -133,10 +135,12 @@ def run_transformer_evolution(opts, logger):
     best_model = None
     best_score = None
 
-    export_cgp_to_graphviz(first_parent.get_encoder().genes, opts, os.path.join(opts.genomes_full_out_dir, f"_PARENT_{osobnik_id}"), only_active=False)
-    export_cgp_to_graphviz(first_parent.get_encoder().genes, opts, os.path.join(opts.genomes_active_out_dir, f"_PARENT_{osobnik_id}"), only_active=True)
+    # export_cgp_to_graphviz(first_parent.get_encoder().genes, opts, os.path.join(opts.genomes_full_out_dir, f"_PARENT_{osobnik_id}"), only_active=False)
+    # export_cgp_to_graphviz(first_parent.get_encoder().genes, opts, os.path.join(opts.genomes_active_out_dir, f"_PARENT_{osobnik_id}"), only_active=True)
     hashkey = hash(first_parent.get_encoder()) 
+    logger.record(key="candidates", id=osobnik_id, genome=first_parent.get_encoder().genome)
     result = evaluate(opts, first_parent, logger, osobnik_id)  
+    
     scores[osobnik_id] =  result.scores[-1]
     result_cache[hashkey] = scores[osobnik_id]      
     best_score = scores[osobnik_id]
@@ -156,7 +160,7 @@ def run_transformer_evolution(opts, logger):
         export_cgp_to_graphviz(parent.get_encoder().genes, opts, os.path.join(opts.genomes_active_out_dir, f"{generation}__PARENT"), only_active=True)
         
         for child in children:
-            logger.record(key="children", osobnik_id=osobnik_id, genome=child.genome)
+            logger.record(key="candidates", id=osobnik_id, genome=child.genome)
             model = AttentionModel(opts, child)
             hashkey = hash(child) 
             parent_equivalent = CGP_Net.are_equivalent(parent.get_encoder(), model.get_encoder())
@@ -191,7 +195,7 @@ def run_transformer_evolution(opts, logger):
                     budget -= 1
                     if budget == 0:
                         break
-            logger.record(key="children_scores", osobnik_id=osobnik_id, final_score=scores[osobnik_id])
+            logger.record(key="candidates_scores", id=osobnik_id, final_score=scores[osobnik_id])
             osobnik_id += 1
         parent = best_model
         parent_score = best_score
@@ -237,6 +241,7 @@ def run_random_search(opts, logger):
         budget -= 1
         
 def run_full_evaluation(opts, logger):
+    # Always run on fixed settings
     csv_path = os.path.join(opts.genome_path, "candidates.csv")
     
     with open(csv_path, newline="", encoding="utf-8") as f:
@@ -253,12 +258,13 @@ def run_full_evaluation(opts, logger):
     opts.n_epochs = 100
     opts.seed = 23 # fix seed so evaluations are stable (actually this sets the seed too late, but it must stay now for reproducibility :D)
     reset_seeds(opts)
-    evaluate(opts, model, logger, opts.id)
+    evaluate(opts, model, logger, opts.id, snapshots_epochs=[opts.n_epochs])
 
 
 def run_cgp(opts, logger):
     opts.debug = False
-    opts.validation_set = CVRP.make_dataset(size=opts.graph_size, num_samples=opts.val_size)
+    if not opts.validation_set:
+        opts.validation_set = CVRP.make_dataset(size=opts.graph_size, num_samples=opts.val_size)
     
     children_limit = 4
     osobnik_id = 1
@@ -270,8 +276,7 @@ def run_cgp(opts, logger):
     best_score = None
     while not best_score:
         first_parent = AttentionModel(opts, CGP_Net.random_genome(opts))
-        export_cgp_to_graphviz(first_parent.get_encoder().genes, opts, os.path.join(opts.genomes_full_out_dir, f"_PARENT_{osobnik_id}"), only_active=False)
-        export_cgp_to_graphviz(first_parent.get_encoder().genes, opts, os.path.join(opts.genomes_active_out_dir, f"_PARENT_{osobnik_id}"), only_active=True)
+
         hashkey = hash(first_parent.get_encoder()) 
         result = evaluate(opts, first_parent, logger, osobnik_id)
         if result:    
@@ -282,10 +287,14 @@ def run_cgp(opts, logger):
             best_id = osobnik_id
             best_weights = first_parent.get_encoder().save_snapshot()
             osobnik_id += 1
-            
+    
     parent_weights = best_weights
     parent_score = best_score
     parent = best_model
+
+    logger.record(key="candidates", id=best_id, genome=first_parent.genome)
+    export_cgp_to_graphviz(first_parent.get_encoder().genes, opts, os.path.join(opts.genomes_full_out_dir, f"_PARENT_{best_id}"), only_active=False)
+    export_cgp_to_graphviz(first_parent.get_encoder().genes, opts, os.path.join(opts.genomes_active_out_dir, f"_PARENT_{best_id}"), only_active=True)
     export_cgp_to_graphviz(parent.get_encoder().genes, opts, os.path.join(opts.parents_out_dir, f"generation_{0}_genome_{best_id}"), only_active=True)
     export_cgp_to_graphviz(parent.get_encoder().genes, opts, os.path.join(opts.parents_out_dir, f"generation_{0}_genome_{best_id}_FULL"), only_active=False)
     
@@ -296,7 +305,7 @@ def run_cgp(opts, logger):
         export_cgp_to_graphviz(parent.get_encoder().genes, opts, os.path.join(opts.genomes_active_out_dir, f"{generation}__PARENT"), only_active=True)
         
         for child in children:
-            logger.record(key="children", osobnik_id=osobnik_id, genome=child.genome)
+            logger.record(key="candidates", id=osobnik_id, genome=child.genome)
             model = AttentionModel(opts, child)
             hashkey = hash(child) 
             parent_equivalent = CGP_Net.are_equivalent(parent.get_encoder(), model.get_encoder())
@@ -331,7 +340,7 @@ def run_cgp(opts, logger):
                     budget -= 1
                     if budget == 0:
                         break
-            logger.record(key="children_scores", osobnik_id=osobnik_id, final_score=scores[osobnik_id])
+            logger.record(key="candidates_scores", id=osobnik_id, final_score=scores[osobnik_id])
             osobnik_id += 1
         parent = best_model
         parent_score = best_score
@@ -341,18 +350,80 @@ def run_cgp(opts, logger):
         logger.record(key="evolution", generation=generation, best_id=best_id, score=best_score)
         logger.record(key="budget", budget=(opts.budget - budget), best_id=best_id, score=best_score)
         generation += 1
+
+def run_generate_validation_data(opts):
+    validation_set = CVRP.make_dataset(size=opts.graph_size, num_samples=opts.val_size)
+    torch.save(validation_set.data,  os.path.join(opts.save_dir, f'validation_dataset_{opts.graph_size}CVRP_seed_{opts.seed}.pt'))
+
+def plot_best_genome(run_dir):
+    run_dir = Path(run_dir)
+
+    budget_path = run_dir / "budget.csv"
+    candidates_path = run_dir / "candidates.csv"
+
+    # Get best_id from the last row of budget.csv
+    with budget_path.open(newline="") as f:
+        rows = list(csv.DictReader(f))
+
+    if not rows:
+        raise ValueError(f"{budget_path} is empty")
+
+    best_id = int(rows[-1]["best_id"])
+
+    # Find corresponding genome in candidate.csv
+    with candidates_path.open(newline="") as f:
+        reader = csv.DictReader(f)
+
+        for row in reader:
+            if int(row["id"]) == best_id:
+                genome = ast.literal_eval(row["genome"])
+                net = CGP_Net(opts, genome)
+                export_cgp_to_graphviz(net.genes, opts, os.path.join(run_dir, f"cgp10"), only_active=True)
+                return best_id, genome
+    print( os.path.join(run_dir, f"parent"))
+  
+    raise ValueError(f"Candidate with id={best_id} not found in {candidates_path}")
+
+
+def verify_sanity2(opts, logger: Logger):
+    opts.n_epochs = 10
+    opts.n_encode_layers = 1
+    opts.epoch_size = 12800
+    opts.graph_size = 10   
+    #reset_seeds(opts)
     
+    torch.manual_seed(opts.seed)
+    original_encoder = GraphAttentionEncoder(
+        n_heads=opts.n_heads,
+        embed_dim=opts.embedding_dim,
+        n_layers=opts.n_encode_layers,
+        normalization=opts.normalization
+    )
+    model_original = AttentionModel(opts, original_encoder)
+    score_original_encoder = evaluate(opts, model_original, logger, candidate_id=-1)
+   
+
 if __name__ == "__main__":
+    # opts = get_options()
+    # bestid, genome = plot_best_genome("/home/piotr/repos/magisterka/outputs/run_20260721T194140_RUN_EVO_EXP_DECAY_10")
+    # print("Best ID:", bestid)
+    # #print("Genome:", genome)
+    # exit()
+    
+    
     opts = get_options()
     initial_setup(opts)
     logger = Logger(opts)
-    verify_sanity(opts, logger)
+    verify_sanity2(opts, logger)
+    # verify_sanity(opts, logger)
     
-    if opts.mode == "cgp":    
-        run_cgp(opts, logger)
-    elif opts.mode == "random_search":
-        run_random_search(opts, logger)
-    elif opts.mode == "full_evaluation":
-        run_full_evaluation(opts, logger)
-    elif opts.mode == "evolve_transformer":
-        run_transformer_evolution(opts, logger)
+    # if opts.mode == "cgp":    
+    #     run_cgp(opts, logger)
+    # elif opts.mode == "random_search":
+    #     run_random_search(opts, logger)
+    # elif opts.mode == "full_evaluation":
+    #     run_full_evaluation(opts, logger)
+    # elif opts.mode == "evolve_transformer":
+    #     run_transformer_evolution(opts, logger)
+    # elif opts.mode == "generate_validation_data":
+    #     run_generate_validation_data(opts)

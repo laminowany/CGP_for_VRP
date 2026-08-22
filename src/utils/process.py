@@ -6,11 +6,14 @@ import random
 import time
 import torch
 
+from learning.problem_vrp import VRPDataset
+
 class Mode(str, Enum):
     CGP = "cgp"
     RANDOM_SEARCH = "random_search"
     FULL_EVALUATION = "full_evaluation"
     EVOLVE_TRANSFORMER = "evolve_transformer"
+    GENERATE_VALIDATION_DATA = "generate_validation_data"
 
 def get_options(args=None):
     parser = argparse.ArgumentParser(
@@ -27,6 +30,7 @@ def get_options(args=None):
     parser.add_argument('--deep_neural_connection', action='store_true', help='Disable limiting the depth of nerual connections')
     parser.add_argument('--x_dim', type=int, default=15, help='Size of X dimension of the grid')
     parser.add_argument('--y_dim', type=int, default=5, help='Size of Y dimension of the grid')
+    parser.add_argument('--validation_set_path', type=str, help='Path to validation set')
    
    
     parser.add_argument('--graph_size', type=int, default=10, help="The size of the problem graph")
@@ -94,6 +98,10 @@ def get_options(args=None):
             parser.error("--genome_path is required in full_evaluation mode")
         if opts.id is None:
             parser.error("--id is required in full_evaluation mode")
+    
+    if opts.validation_set_path is not None:
+        data = torch.load(opts.validation_set_path)
+        opts.validation_set = VRPDataset(data=data)
         
     # CUSTOM SENEGAS
     opts.baseline = 'rollout'
