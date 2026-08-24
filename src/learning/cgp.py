@@ -218,7 +218,7 @@ def parse_genes(data):
 GENE_TYPES_LEN = 7
 
 # (TYP, (INPUTY), (PARAMS))
-class CGP_Net(nn.Module):
+class CGP_Encoder(nn.Module):
     def __init__(self, opts, genome): 
         super().__init__()
         self.num_heads = 8
@@ -332,7 +332,7 @@ class CGP_Net(nn.Module):
         self.propagation_order = order
         
     def get_global_idx(self, x, y):
-        return CGP_Net.to_global_idx(x, y, self.x_dim, self.y_dim)
+        return CGP_Encoder.to_global_idx(x, y, self.x_dim, self.y_dim)
     
     @staticmethod
     def to_global_idx(x, y, x_dim, y_dim):
@@ -493,7 +493,7 @@ class CGP_Net(nn.Module):
                     else:
                         genome[pos] = self.mutate_gene_type(x, y).encode()
         
-            child = CGP_Net(
+            child = CGP_Encoder(
                 opts=self.opts,
                 genome=genome
             )
@@ -502,7 +502,7 @@ class CGP_Net(nn.Module):
     
     @staticmethod
     def random_genome(opts):
-        dummy = CGP_Net.__new__(CGP_Net)
+        dummy = CGP_Encoder.__new__(CGP_Encoder)
         x_dim = opts.x_dim
         y_dim = opts.y_dim
         dummy.x_dim = x_dim
@@ -512,9 +512,9 @@ class CGP_Net(nn.Module):
         for x in range(x_dim):
             for y in range(y_dim):
                 gene = dummy.spawn_random_gene(x, y)
-                genome[CGP_Net.to_global_idx(x, y, x_dim, y_dim)] = gene.encode()
+                genome[CGP_Encoder.to_global_idx(x, y, x_dim, y_dim)] = gene.encode()
                 
-        possible_inputs = list(map(lambda py: CGP_Net.to_global_idx(x_dim - 1, py, x_dim, y_dim), range(y_dim)))
+        possible_inputs = list(map(lambda py: CGP_Encoder.to_global_idx(x_dim - 1, py, x_dim, y_dim), range(y_dim)))
         outputs = []
         prob_input = 1
         while random.random() < prob_input and possible_inputs:
@@ -524,10 +524,8 @@ class CGP_Net(nn.Module):
             prob_input *= 0.5
         genome[length + 1] = (5, tuple(outputs))
         
-        return CGP_Net(
+        return CGP_Encoder(
             opts=opts,
-            x_dim=x_dim,
-            y_dim=y_dim,
             genome=genome
         )
         

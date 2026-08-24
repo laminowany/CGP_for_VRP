@@ -18,16 +18,17 @@ from learning.problem_vrp import CVRP
 
 @dataclass
 class EvaluationResult:
+    model: AttentionModel
     scores: list
     snapshots: list
 
-def evaluate(opts, logger: Logger, encoder_genome = None, candidate_id = None) -> EvaluationResult:
+def evaluate(opts, logger: Logger, encoder = None, candidate_id = None) -> EvaluationResult:
     if not candidate_id:
         candidate_id = 0
         
     torch.manual_seed(opts.seed)
 
-    model = AttentionModel(opts, encoder_genome)
+    model = AttentionModel(opts, encoder)
     baseline = RolloutBaseline(model, opts)
     baseline = WarmupBaseline(baseline, opts.bl_warmup_epochs, warmup_exp_beta=opts.exp_beta)
     optimizer = optim.Adam(
@@ -41,7 +42,7 @@ def evaluate(opts, logger: Logger, encoder_genome = None, candidate_id = None) -
     lr_scheduler = optim.lr_scheduler.LambdaLR(optimizer, lambda epoch: opts.lr_decay ** epoch)
     validation_set = getattr(opts, "validation_set", None)
     if not validation_set:
-        validation_set = CVRP.make_dataset(size=opts.graph_size, num_samples=opts.val_size)
+        validation_set = CVRP.make_dataset(size=opts.graph_size, num_samples=opts.val_test_size)
     
     snapshots = []
     scores = []
@@ -67,10 +68,10 @@ def evaluate(opts, logger: Logger, encoder_genome = None, candidate_id = None) -
         logger.record(
                 epoch=epoch,
                 id=candidate_id,
-                score=score,
+                score=float(score),
                 time=end-start
         )
-    return EvaluationResult(scores, snapshots)
+    return EvaluationResult(model, scores, snapshots)
 
 def validate(model, dataset, opts):
     cost = rollout(model, dataset, opts)
@@ -115,7 +116,8 @@ def clip_grad_norms(param_groups, max_norm=math.inf):
 
 
 def train_epoch(model, optimizer, baseline, lr_scheduler, epoch, val_dataset, opts):
-    print("Start train epoch {}, lr={} for run {}".format(epoch, optimizer.param_groups[0]['lr'], opts.run_name))
+    if not opts.no_progress_bar:
+        print("Start train epoch {}, lr={} for run {}".format(epoch, optimizer.param_groups[0]['lr'], opts.run_name))
     step = epoch * (opts.epoch_size // opts.batch_size)
     start_time = time.time()
 
@@ -138,9 +140,10 @@ def train_epoch(model, optimizer, baseline, lr_scheduler, epoch, val_dataset, op
         )
         step += 1
     epoch_duration = time.time() - start_time
-    print("Finished epoch {}, took {} s".format(epoch, time.strftime('%H:%M:%S', time.gmtime(epoch_duration))))
+    if not opts.no_progress_bar:
+        print("Finished epoch {}, took {} s".format(epoch, time.strftime('%H:%M:%S', time.gmtime(epoch_duration))))
     
-    if epoch == opts.n_epochs - 1:
+    if epoch == opts.n_epochs - 1 and not opts.no_save_model:
         print('Saving model and state...')
         torch.save(
             {
@@ -154,7 +157,7 @@ def train_epoch(model, optimizer, baseline, lr_scheduler, epoch, val_dataset, op
         )
 
     avg_reward = validate(model, val_dataset, opts)
-    print(f'epoch {epoch}, score {avg_reward}')
+    #print(f'epoch {epoch}, score {avg_reward}')
     csv_path = os.path.join(opts.save_dir, "validation_scores.csv")
     file_exists = os.path.exists(csv_path)
     with open(csv_path, "a", newline="") as f:

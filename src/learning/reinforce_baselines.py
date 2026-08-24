@@ -155,8 +155,8 @@ class RolloutBaseline(Baseline):
         # Always generate baseline dataset when updating model to prevent overfitting to the baseline dataset
 
         if dataset is not None:
-            if len(dataset) != self.opts.val_size:
-                print("Warning: not using saved baseline dataset since val_size does not match")
+            if len(dataset) != self.opts.val_test_size:
+                print("Warning: not using saved baseline dataset since val_test_size does not match")
                 dataset = None
             elif (dataset[0]['loc']).size(0) != self.opts.graph_size:
                 print("Warning: not using saved baseline dataset since graph_size does not match")
@@ -164,7 +164,7 @@ class RolloutBaseline(Baseline):
 
         if dataset is None:
             self.dataset = CVRP.make_dataset(
-                size=self.opts.graph_size, num_samples=self.opts.val_size)
+                size=self.opts.graph_size, num_samples=self.opts.val_test_size)
         else:
             self.dataset = dataset
         #print("Evaluating baseline model on evaluation dataset")

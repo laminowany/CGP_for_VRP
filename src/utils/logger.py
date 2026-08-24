@@ -2,7 +2,7 @@ import os
 import json
 import pandas as pd
 
-EXCLUDE = {"device", "validation_set"}
+EXCLUDE = {"device", "validation_set", "test_set"}
 
 class Logger:
     def __init__(self, opts):

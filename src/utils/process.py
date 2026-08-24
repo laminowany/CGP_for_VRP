@@ -15,6 +15,7 @@ class Mode(str, Enum):
     EVOLVE_TRANSFORMER = "evolve_transformer"
     GENERATE_VALIDATION_DATA = "generate_validation_data"
     GENOME_EVALUATION = "genome_evaluation" 
+    EVALUATE = "evaluate"
 
 def get_options(args=None):
     parser = argparse.ArgumentParser(
@@ -22,8 +23,8 @@ def get_options(args=None):
     parser.add_argument('--problem', default='cvrp', help="The problem to solve, default 'tsp'")
     parser.add_argument('--model', default='attention', help="Model, 'attention' (default) or 'pointer'")
     parser.add_argument('--mode', choices = [m.value for m in Mode], default=Mode.CGP.value)
-    parser.add_argument('--genome_path', type=str, help='Path to dir with candidates metadata')
     parser.add_argument('--genome_name', type=str, help='Name of predefined architecture')
+    parser.add_argument('--genome_path', type=str, help='Path to dir with candidates metadata')
     parser.add_argument('--id', type=int, default=None, help='Identifier of candidate to use')
     parser.add_argument('--seed', type=int, default=1234, help='Random seed to use')
     parser.add_argument('--epoch_size', type=int, default=1280000, help='Number of instances per epoch during training')
@@ -31,22 +32,26 @@ def get_options(args=None):
     parser.add_argument('--start_from_transformer', action='store_true', help='Indicates if evolution starts from transformer architecture'
                         ' instead of randomly generated parents')
     parser.add_argument('--deep_neural_connection', action='store_true', help='Disable limiting the depth of nerual connections')
-    parser.add_argument('--x_dim', type=int, default=15, help='Size of X dimension of the grid')
+    parser.add_argument('--x_dim', type=int, default=8, help='Size of X dimension of the grid')
     parser.add_argument('--y_dim', type=int, default=5, help='Size of Y dimension of the grid')
     parser.add_argument('--validation_set_path', type=str, help='Path to validation set')
+    parser.add_argument('--test_set_path', type=str, help='Path to test set')
+    parser.add_argument('--val_test_size', type=int, default=10000,
+                        help='Number of instances used for validation and test set')
+    parser.add_argument('--checkpoint_path', type=str, help='Path to model checkpoint')
    
-   
+    parser.add_argument('--n_epochs', type=int, default=100, help='The number of epochs to train')
+    
     parser.add_argument('--graph_size', type=int, default=10, help="The size of the problem graph")
     parser.add_argument('--batch_size', type=int, default=512, help='Number of instances per batch during training')
 
-    parser.add_argument('--val_size', type=int, default=10000,
-                        help='Number of instances used for reporting validation performance')
+
     # parser.add_argument('--val_dataset', type=str, default=None, help='Dataset file to use for validation')
 
     # # Model
     parser.add_argument('--embedding_dim', type=int, default=128, help='Dimension of input embedding')
     parser.add_argument('--hidden_dim', type=int, default=128, help='Dimension of hidden layers in Enc/Dec')
-    parser.add_argument('--n_encode_layers', type=int, default=1,
+    parser.add_argument('--n_encode_layers', type=int, default=3,
                         help='Number of layers in the encoder/critic network')
     parser.add_argument('--tanh_clipping', type=float, default=10.,
                         help='Clip the parameters to within +- this value using tanh. '
@@ -57,7 +62,7 @@ def get_options(args=None):
     parser.add_argument('--lr_model', type=float, default=1e-4, help="Set the learning rate for the actor network")
     parser.add_argument('--lr_critic', type=float, default=1e-4, help="Set the learning rate for the critic network")
     parser.add_argument('--lr_decay', type=float, default=1.0, help='Learning rate decay per epoch')
-    parser.add_argument('--n_epochs', type=int, default=100, help='The number of epochs to train')
+
 
     parser.add_argument('--max_grad_norm', type=float, default=1.0,
                         help='Maximum L2 norm for gradient clipping, default 1.0 (0 to disable clipping)')
@@ -85,7 +90,8 @@ def get_options(args=None):
     parser.add_argument('--log_step', type=int, default=50, help='Log info every log_step steps')
     parser.add_argument('--epoch_start', type=int, default=0,
                         help='Start at epoch # (relevant for learning rate decay)')
-    parser.add_argument('--no_progress_bar', action='store_false', help='Disable progress bar')
+    parser.add_argument('--no_progress_bar', action='store_true', help='Disable progress bar')
+    parser.add_argument('--no_save_model', action='store_true', help='Don\'t save model weights after training')
 
     parser.add_argument('--log_dir', default='../logs', help='Directory to write TensorBoard information to')
     parser.add_argument('--run_name', default='', type=str, help='Name to identify the run')
@@ -93,7 +99,7 @@ def get_options(args=None):
     
 
     opts = parser.parse_args(args)
-    if opts.seed is None:
+    if opts.seed == -1:
         opts.seed = random.randint(0, 9999)
         
     if opts.mode == "full_evaluation":
@@ -104,11 +110,15 @@ def get_options(args=None):
     
     if opts.validation_set_path is not None:
         data = torch.load(opts.validation_set_path)
-        opts.validation_set = VRPDataset(data=data)
+        opts.validation_set = VRPDataset(size=opts.graph_size, num_samples=opts.val_test_size, data=data)
+        
+    if opts.test_set_path is not None:
+        data = torch.load(opts.test_set_path)
+        opts.test_set = VRPDataset(size=opts.graph_size, num_samples=opts.val_test_size, data=data)
         
     # CUSTOM SENEGAS
     opts.baseline = 'rollout'
-    opts.no_progress_bar = False
+    # opts.no_progress_bar = False
     opts.n_heads = 8
 
     opts.epoch_time_limit = 10*60 # 10 minut

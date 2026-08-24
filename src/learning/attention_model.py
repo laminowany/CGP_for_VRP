@@ -3,7 +3,7 @@ import os
 import torch
 from torch import nn
 from typing import NamedTuple
-from learning.cgp import CGP_Net
+from learning.cgp import CGP_Encoder
 from utils.beam_search import CachedLookup
 from torch.utils.checkpoint import checkpoint
 from utils.misc import sample_many
@@ -35,7 +35,7 @@ class AttentionModel(nn.Module):
      
     def __init__(self,
                  opts,
-                 encoder_genome = None,):
+                 encoder = None,):
         super(AttentionModel, self).__init__()
         self.embedding_dim = opts.embedding_dim
         self.hidden_dim =  opts.hidden_dim
@@ -63,8 +63,8 @@ class AttentionModel(nn.Module):
         self.init_embed = nn.Linear(node_dim, self.embedding_dim)
         self.normalization = 'batch'
         
-        if encoder_genome:    
-            self.embedder = CGP_Net(opts, encoder_genome) 
+        if encoder:    
+            self.embedder = encoder 
         else:
             self.embedder = GraphAttentionEncoder(
                         n_heads=self.n_heads,
