@@ -218,7 +218,7 @@ def parse_genes(data):
 GENE_TYPES_LEN = 7
 
 # (TYP, (INPUTY), (PARAMS))
-class CGP_Encoder(nn.Module):
+class CGP_Net(nn.Module):
     def __init__(self, opts, genome): 
         super().__init__()
         self.num_heads = 8
@@ -332,7 +332,7 @@ class CGP_Encoder(nn.Module):
         self.propagation_order = order
         
     def get_global_idx(self, x, y):
-        return CGP_Encoder.to_global_idx(x, y, self.x_dim, self.y_dim)
+        return CGP_Net.to_global_idx(x, y, self.x_dim, self.y_dim)
     
     @staticmethod
     def to_global_idx(x, y, x_dim, y_dim):
@@ -493,7 +493,7 @@ class CGP_Encoder(nn.Module):
                     else:
                         genome[pos] = self.mutate_gene_type(x, y).encode()
         
-            child = CGP_Encoder(
+            child = CGP_Net(
                 opts=self.opts,
                 genome=genome
             )
@@ -502,7 +502,7 @@ class CGP_Encoder(nn.Module):
     
     @staticmethod
     def random_genome(opts):
-        dummy = CGP_Encoder.__new__(CGP_Encoder)
+        dummy = CGP_Net.__new__(CGP_Net)
         x_dim = opts.x_dim
         y_dim = opts.y_dim
         dummy.x_dim = x_dim
@@ -512,9 +512,9 @@ class CGP_Encoder(nn.Module):
         for x in range(x_dim):
             for y in range(y_dim):
                 gene = dummy.spawn_random_gene(x, y)
-                genome[CGP_Encoder.to_global_idx(x, y, x_dim, y_dim)] = gene.encode()
+                genome[CGP_Net.to_global_idx(x, y, x_dim, y_dim)] = gene.encode()
                 
-        possible_inputs = list(map(lambda py: CGP_Encoder.to_global_idx(x_dim - 1, py, x_dim, y_dim), range(y_dim)))
+        possible_inputs = list(map(lambda py: CGP_Net.to_global_idx(x_dim - 1, py, x_dim, y_dim), range(y_dim)))
         outputs = []
         prob_input = 1
         while random.random() < prob_input and possible_inputs:
@@ -524,7 +524,7 @@ class CGP_Encoder(nn.Module):
             prob_input *= 0.5
         genome[length + 1] = (5, tuple(outputs))
         
-        return CGP_Encoder(
+        return CGP_Net(
             opts=opts,
             genome=genome
         )
@@ -533,13 +533,29 @@ class CGP_Encoder(nn.Module):
         snapshot = {}
         for pos, net_element in enumerate(self.nets):
             if net_element and net_element.nn:
-                snapshot[f"net_{pos}"] = net_element.nn.state_dict()
+                snapshot[f"net_{pos}"] = {
+                    "type": type(net_element.nn).__name__,
+                    "state_dict": net_element.nn.state_dict()
+                }
         return snapshot
 
     def load_snapshot(self, snapshot):
         for pos, net_element in enumerate(self.nets):
-            if net_element and net_element.nn and f"net_{pos}" in snapshot:
-                net_element.nn.load_state_dict(snapshot[f"net_{pos}"])
+            key = f"net_{pos}"
+            if not net_element or not net_element.nn or key not in snapshot:
+                continue
+            saved = snapshot[key]
+            if saved["type"] != type(net_element.nn).__name__:
+                continue
+            current = net_element.nn.state_dict()
+            compatible = {}
+            for k, v in saved["state_dict"].items():
+                if k not in current:
+                    continue
+                if current[k].shape != v.shape:
+                    continue
+                compatible[k] = v
+            net_element.nn.load_state_dict(compatible, strict=False)
     
     def export_genome(self):
         genome = []

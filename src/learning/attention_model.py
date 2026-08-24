@@ -3,7 +3,7 @@ import os
 import torch
 from torch import nn
 from typing import NamedTuple
-from learning.cgp import CGP_Encoder
+from learning.cgp import CGP_Net
 from utils.beam_search import CachedLookup
 from torch.utils.checkpoint import checkpoint
 from utils.misc import sample_many
