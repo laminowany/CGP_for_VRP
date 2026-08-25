@@ -157,7 +157,8 @@ def train_epoch(model, optimizer, baseline, lr_scheduler, epoch, val_dataset, op
         )
 
     avg_reward = validate(model, val_dataset, opts)
-    #print(f'epoch {epoch}, score {avg_reward}')
+    if not opts.no_progress_bar:
+        print(f'epoch {epoch}, score {avg_reward}')
     csv_path = os.path.join(opts.save_dir, "validation_scores.csv")
     file_exists = os.path.exists(csv_path)
     with open(csv_path, "a", newline="") as f:
