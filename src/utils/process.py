@@ -1,4 +1,5 @@
 import argparse
+import ast
 from enum import Enum
 import os
 from pathlib import Path
@@ -23,6 +24,7 @@ def get_options(args=None):
     parser.add_argument('--problem', default='cvrp', help="The problem to solve, default 'tsp'")
     parser.add_argument('--model', default='attention', help="Model, 'attention' (default) or 'pointer'")
     parser.add_argument('--mode', choices = [m.value for m in Mode], default=Mode.CGP.value)
+
     parser.add_argument('--genome_name', type=str, help='Name of predefined architecture')
     parser.add_argument('--genome_path', type=str, help='Path to dir with candidates metadata')
     parser.add_argument('--id', type=int, default=None, help='Identifier of candidate to use')
@@ -97,6 +99,7 @@ def get_options(args=None):
     parser.add_argument('--run_name', default='', type=str, help='Name to identify the run')
     parser.add_argument('--output_dir', default='outputs', help='Directory to write output models to')
     
+    parser.add_argument('--genome', type=str, default=None, help='Genome of architecture to evaluate')
 
     opts = parser.parse_args(args)
     if opts.seed == -1:
@@ -116,6 +119,8 @@ def get_options(args=None):
         data = torch.load(opts.test_set_path)
         opts.test_set = VRPDataset(size=opts.graph_size, num_samples=opts.val_test_size, data=data)
         
+    if opts.genome:
+        opts.genome = ast.literal_eval(opts.genome)
     # CUSTOM SENEGAS
     opts.baseline = 'rollout'
     # opts.no_progress_bar = False

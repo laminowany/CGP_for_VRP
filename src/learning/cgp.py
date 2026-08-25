@@ -557,6 +557,42 @@ class CGP_Net(nn.Module):
                 compatible[k] = v
             net_element.nn.load_state_dict(compatible, strict=False)
     
+    def count_active_parameters(self, trainable_only=True):
+        total = 0
+
+        for net_element in self.nets:
+            if not net_element or not net_element.nn or not net_element.active:
+                continue
+
+            for param in net_element.nn.parameters():
+                if trainable_only and not param.requires_grad:
+                    continue
+
+                total += param.numel()
+
+        return total
+    
+    def print_active_parameters(self):
+        total = 0
+
+        for pos, net_element in enumerate(self.nets):
+            if not net_element or not net_element.nn or not net_element.active:
+                continue
+
+            params = sum(p.numel() for p in net_element.nn.parameters())
+            total += params
+
+            gene_type = self.genes[pos].type if self.genes[pos] else None
+
+            print(
+                f"pos={pos:2d} "
+                f"type={gene_type} "
+                f"module={type(net_element.nn).__name__:20s} "
+                f"params={params:,}"
+            )
+
+        print(f"TOTAL ACTIVE PARAMS: {total:,}")
+
     def export_genome(self):
         genome = []
 
