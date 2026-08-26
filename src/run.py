@@ -94,72 +94,74 @@ def verify_sanity(opts, logger: Logger):
     opts.x_dim = orig_x_dim
 
 def run_transformer_evolution(opts, logger):
-    first_parent = AttentionModel(opts, CGP_Net(opts, produce_transformer_genome(opts)))
-
-    children_limit = 4
+    parent_encoder = CGP_Net(opts, produce_transformer_genome(opts))
     osobnik_id = 1
+    result = evaluate(opts, logger, parent_encoder, osobnik_id)  
+    train_and_validate_encoder(opts, logger, parent_encoder, result)
+        
+def train_and_validate_encoder(opts, logger, encoder, encoder_result):
+    children_limit = 4
     scores = {}
-    generation = 1
     result_cache = {}
-    best_score = None
-    best_model = None
-    best_score = None
-
-    # export_cgp_to_graphviz(first_parent.get_encoder().genes, opts, os.path.join(opts.genomes_full_out_dir, f"_PARENT_{osobnik_id}"), only_active=False)
-    # export_cgp_to_graphviz(first_parent.get_encoder().genes, opts, os.path.join(opts.genomes_active_out_dir, f"_PARENT_{osobnik_id}"), only_active=True)
-    hashkey = hash(first_parent.get_encoder()) 
-    logger.record(key="candidates", id=osobnik_id, genome=first_parent.get_encoder().genome)
-    result = evaluate(opts, first_parent, logger, osobnik_id)  
+    osobnik_id = 0
+    generation = 1
     
-    scores[osobnik_id] =  result.scores[-1]
+    hashkey = hash(encoder)   
+    scores[osobnik_id] =  encoder_result.scores[-1]
     result_cache[hashkey] = scores[osobnik_id]      
     best_score = scores[osobnik_id]
-    best_model = first_parent
+    best_encoder = encoder
     best_id = osobnik_id
-    best_weights = first_parent.get_encoder().save_snapshot()
+    best_weights = encoder.save_snapshot()
     osobnik_id += 1
-            
+    
     parent_weights = best_weights
     parent_score = best_score
-    parent = best_model
+    parent_encoder = best_encoder
+
+    logger.record(key="candidates", id=best_id, genome=encoder.genome)
+    logger.record(key="candidates_scores", id=best_id, final_score=scores[best_id])
+    export_cgp_to_graphviz(parent_encoder.genes, opts, os.path.join(opts.genomes_full_out_dir, f"_PARENT_{best_id}"), only_active=False)
+    export_cgp_to_graphviz(parent_encoder.genes, opts, os.path.join(opts.genomes_active_out_dir, f"_PARENT_{best_id}"), only_active=True)
+    export_cgp_to_graphviz(parent_encoder.genes, opts, os.path.join(opts.parents_out_dir, f"generation_{0}_genome_{best_id}"), only_active=True)
+    export_cgp_to_graphviz(parent_encoder.genes, opts, os.path.join(opts.parents_out_dir, f"generation_{0}_genome_{best_id}_FULL"), only_active=False)
     
     budget = opts.budget
     while budget > 0:
-        children = parent.get_encoder().produce_offspring(children_limit, opts, budget)
-        export_cgp_to_graphviz(parent.get_encoder().genes, opts, os.path.join(opts.genomes_full_out_dir, f"{generation}__PARENT"), only_active=False)
-        export_cgp_to_graphviz(parent.get_encoder().genes, opts, os.path.join(opts.genomes_active_out_dir, f"{generation}__PARENT"), only_active=True)
+        encoders = parent_encoder.produce_offspring(children_limit, opts, budget)
+        export_cgp_to_graphviz(parent_encoder.genes, opts, os.path.join(opts.genomes_full_out_dir, f"{generation}__PARENT"), only_active=False)
+        export_cgp_to_graphviz(parent_encoder.genes, opts, os.path.join(opts.genomes_active_out_dir, f"{generation}__PARENT"), only_active=True)
         
-        for child in children:
-            logger.record(key="candidates", id=osobnik_id, genome=child.genome)
-            model = AttentionModel(opts, child)
-            hashkey = hash(child) 
-            parent_equivalent = CGP_Net.are_equivalent(parent.get_encoder(), model.get_encoder())
+        for encoder in encoders:
+            logger.record(key="candidates", id=osobnik_id, genome=encoder.genome)
+            hashkey = hash(encoder) 
+            parent_equivalent = CGP_Net.are_equivalent(parent_encoder, encoder)
             
             if parent_equivalent:
                 scores[osobnik_id] = result_cache[hashkey]
-                export_cgp_to_graphviz(model.get_encoder().genes, opts, os.path.join(opts.genomes_full_out_dir, f"{generation}_genome_{osobnik_id}_EQ"), only_active=False)
-                export_cgp_to_graphviz(model.get_encoder().genes, opts, os.path.join(opts.genomes_active_out_dir, f"{generation}_genome_{osobnik_id}_EQ"), only_active=True)
+                export_cgp_to_graphviz(encoder.genes, opts, os.path.join(opts.genomes_full_out_dir, f"{generation}_genome_{osobnik_id}_EQ"), only_active=False)
+                export_cgp_to_graphviz(encoder.genes, opts, os.path.join(opts.genomes_active_out_dir, f"{generation}_genome_{osobnik_id}_EQ"), only_active=True)
                 if compare_floats(parent_score, best_score) == 0: # neutral drift
-                    best_model = model
+                    best_encoder = encoder
                     best_id = osobnik_id
             else:
-                export_cgp_to_graphviz(model.get_encoder().genes, opts, os.path.join(opts.genomes_full_out_dir, f"{generation}_genome_{osobnik_id}_NEW"), only_active=False)
-                export_cgp_to_graphviz(model.get_encoder().genes, opts, os.path.join(opts.genomes_active_out_dir, f"{generation}_genome_{osobnik_id}_NEW"), only_active=True)
-                model.load_weights(parent_weights)
+                export_cgp_to_graphviz(encoder.genes, opts, os.path.join(opts.genomes_full_out_dir, f"{generation}_genome_{osobnik_id}_NEW"), only_active=False)
+                export_cgp_to_graphviz(encoder.genes, opts, os.path.join(opts.genomes_active_out_dir, f"{generation}_genome_{osobnik_id}_NEW"), only_active=True)
+                encoder.load_snapshot(parent_weights)
                 if hashkey in result_cache:
                     scores[osobnik_id] = result_cache[hashkey]
                 else:
-                    result = evaluate(opts, model, logger, osobnik_id)
+                    result = evaluate(opts, logger, encoder, osobnik_id)
                     if result:
                         scores[osobnik_id] = result.scores[-1]
                         result_cache[hashkey] = scores[osobnik_id]
                         if compare_floats(scores[osobnik_id], best_score) == -1:
-                            best_model = model
+                            best_encoder = encoder
                             best_score = scores[osobnik_id]
-                            best_weights = model.get_encoder().save_snapshot()
+                            best_weights = encoder.save_snapshot()
                             best_id = osobnik_id
                             print(f'Znaleziono lepszego osobnika {osobnik_id} o koszcie: {best_score}.')
-                            export_cgp_to_graphviz(model.get_encoder().genes, opts, os.path.join(opts.parents_out_dir, f"generation_{generation}_genome_{osobnik_id}"), only_active=True)
+                            export_cgp_to_graphviz(encoder.genes, opts, os.path.join(opts.parents_out_dir, f"generation_{generation}_genome_{osobnik_id}"), only_active=True)
                     else:
                         scores[osobnik_id] = None
                     budget -= 1
@@ -167,7 +169,7 @@ def run_transformer_evolution(opts, logger):
                         break
             logger.record(key="candidates_scores", id=osobnik_id, final_score=scores[osobnik_id])
             osobnik_id += 1
-        parent = best_model
+        parent_encoder = best_encoder
         parent_score = best_score
         parent_weights = best_weights
             
@@ -251,90 +253,13 @@ def run_genome_evaluation(opts, logger):
     evaluate(opts, logger, encoder)
 
 def run_cgp(opts, logger):
-    children_limit = 4
-    osobnik_id = 1
-    scores = {}
-    generation = 1
-    result_cache = {}
-    best_score = None
-    best_model = None
-    best_encoder = None
-    best_score = None
-    while not best_score:
+    osobnik_id = 0
+    result = None
+    while not result:
         encoder = CGP_Net.random_genome(opts)
-
-        hashkey = hash(encoder) 
         result = evaluate(opts, logger, encoder, osobnik_id)
         if result:    
-            scores[osobnik_id] =  result.scores[-1]
-            result_cache[hashkey] = scores[osobnik_id]      
-            best_score = scores[osobnik_id]
-            best_encoder = encoder
-            best_id = osobnik_id
-            best_weights = encoder.save_snapshot()
-            osobnik_id += 1
-    
-    parent_weights = best_weights
-    parent_score = best_score
-    parent_encoder = best_encoder
-
-    logger.record(key="candidates", id=best_id, genome=encoder.genome)
-    export_cgp_to_graphviz(parent_encoder.genes, opts, os.path.join(opts.genomes_full_out_dir, f"_PARENT_{best_id}"), only_active=False)
-    export_cgp_to_graphviz(parent_encoder.genes, opts, os.path.join(opts.genomes_active_out_dir, f"_PARENT_{best_id}"), only_active=True)
-    export_cgp_to_graphviz(parent_encoder.genes, opts, os.path.join(opts.parents_out_dir, f"generation_{0}_genome_{best_id}"), only_active=True)
-    export_cgp_to_graphviz(parent_encoder.genes, opts, os.path.join(opts.parents_out_dir, f"generation_{0}_genome_{best_id}_FULL"), only_active=False)
-    
-    budget = opts.budget
-    while budget > 0:
-        encoders = parent_encoder.produce_offspring(children_limit, opts, budget)
-        export_cgp_to_graphviz(parent_encoder.genes, opts, os.path.join(opts.genomes_full_out_dir, f"{generation}__PARENT"), only_active=False)
-        export_cgp_to_graphviz(parent_encoder.genes, opts, os.path.join(opts.genomes_active_out_dir, f"{generation}__PARENT"), only_active=True)
-        
-        for encoder in encoders:
-            logger.record(key="candidates", id=osobnik_id, genome=encoder.genome)
-            hashkey = hash(encoder) 
-            parent_equivalent = CGP_Net.are_equivalent(parent_encoder, encoder)
-            
-            if parent_equivalent:
-                scores[osobnik_id] = result_cache[hashkey]
-                export_cgp_to_graphviz(encoder.genes, opts, os.path.join(opts.genomes_full_out_dir, f"{generation}_genome_{osobnik_id}_EQ"), only_active=False)
-                export_cgp_to_graphviz(encoder.genes, opts, os.path.join(opts.genomes_active_out_dir, f"{generation}_genome_{osobnik_id}_EQ"), only_active=True)
-                if compare_floats(parent_score, best_score) == 0: # neutral drift
-                    best_encoder = encoder
-                    best_id = osobnik_id
-            else:
-                export_cgp_to_graphviz(encoder.genes, opts, os.path.join(opts.genomes_full_out_dir, f"{generation}_genome_{osobnik_id}_NEW"), only_active=False)
-                export_cgp_to_graphviz(encoder.genes, opts, os.path.join(opts.genomes_active_out_dir, f"{generation}_genome_{osobnik_id}_NEW"), only_active=True)
-                encoder.load_snapshot(parent_weights)
-                if hashkey in result_cache:
-                    scores[osobnik_id] = result_cache[hashkey]
-                else:
-                    result = evaluate(opts, logger, encoder, osobnik_id)
-                    if result:
-                        scores[osobnik_id] = result.scores[-1]
-                        result_cache[hashkey] = scores[osobnik_id]
-                        if compare_floats(scores[osobnik_id], best_score) == -1:
-                            best_encoder = encoder
-                            best_score = scores[osobnik_id]
-                            best_weights = encoder.save_snapshot()
-                            best_id = osobnik_id
-                            print(f'Znaleziono lepszego osobnika {osobnik_id} o koszcie: {best_score}.')
-                            export_cgp_to_graphviz(encoder.genes, opts, os.path.join(opts.parents_out_dir, f"generation_{generation}_genome_{osobnik_id}"), only_active=True)
-                    else:
-                        scores[osobnik_id] = None
-                    budget -= 1
-                    if budget == 0:
-                        break
-            logger.record(key="candidates_scores", id=osobnik_id, final_score=scores[osobnik_id])
-            osobnik_id += 1
-        parent_encoder = best_encoder
-        parent_score = best_score
-        parent_weights = best_weights
-            
-        print(f'Generacja {generation}, najlepszy {best_score}')    
-        logger.record(key="evolution", generation=generation, best_id=best_id, score=best_score)
-        logger.record(key="budget", budget=(opts.budget - budget), best_id=best_id, score=best_score)
-        generation += 1
+            train_and_validate_encoder(opts, logger, encoder, result)
 
 def run_generate_validation_data(opts):
     validation_set = CVRP.make_dataset(size=opts.graph_size, num_samples=opts.val_test_size)
