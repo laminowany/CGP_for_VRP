@@ -232,20 +232,9 @@ def run_full_evaluation(opts, logger):
     evaluate(opts, model, logger, opts.id, snapshots_epochs=[opts.n_epochs])
 
 def run_genome_evaluation(opts, logger):
-    if not opts.genome_name and not opts.genome:
-        raise Exception("Please specify name of architecture with --genome_name or genome with --genome")
-    genomes = {
-        "TRANS1" : [None, (1, 0), (1, 1), (1, 2), (1, 3), (1, 4), (1, 5), (1, 6), (1, 7), (1, 0), (1, 9), (1, 10), (1, 19), (1, 12), (1, 13), (1, 14), (1, 15), (4, 0), (5, (9, 17)), (2, 18), (3, 19, 1), (7, 20), (3, 21, -1), (5, (14, 22)), (2, 23), (1, 0), (1, 25), (1, 26), (1, 27), (1, 28), (1, 29), (1, 30), (1, 31), (1, 0), (1, 33), (1, 34), (1, 35), (1, 36), (1, 37), (1, 38), (1, 39), (5, 24)],
-        "EVO1" : [None, (7, 0), (2, 25), (4, 34), (3, 19, -1), (5, (4, 28)), (5, 21), (1, 22), (1, 31), (4, 0), (4, 9), (4, 2), (1, 19), (3, 28, -1), (1, 37), (7, 14), (6, 39), (5, 0), (5, (25, 33, 1)), (2, 18), (3, 19, 1), (2, 28), (7, 29), (1, 38), (5, 31), (5, 0), (4, 1), (4, 26), (1, 19), (6, 28), (5, 29), (2, 22), (2, 15), (4, 0), (5, 25), (3, 34, 0), (7, 35), (5, 28), (4, 21), (2, 14), (6, 39), (5, 32)],
-        "EVO2": [None, (1, 0), (6, 25), (3, 26, 0), (2, 35), (4, 28), (5, 21), (6, 38), (7, 15), (5, 0), (4, 25), (4, 18), (2, 19), (7, 12), (1, 37), (6, 14), (1, 15), (4, 0), (5, (9, 17)), (2, 18), (1, 19), (7, 20), (4, 21), (6, 38), (4, 7), (2, 0), (4, 1), (3, 26, 1), (3, 35, 1), (4, 4), (1, 21), (2, 30), (5, 31), (1, 0), (4, 25), (5, 26), (2, 3), (6, 28), (3, 13, 0), (5, 22), (1, 39), (5, 32)],
-        "EVO10": [None, (5, 0), (3, 1, 1), (7, 10), (4, 35), (3, 36, 1), (2, 37), (5, (22, 30, 14)), (6, 7), (2, 0), (7, 1), (7, 26), (7, 19), (3, 12, 1), (3, 37, 0), (6, 38), (3, 39, 1), (4, 0), (5, (9, 17)), (3, 18, 0), (4, 27), (7, 12), (7, 13), (7, 30), (2, 23), (2, 0), (1, 25), (6, 2), (3, 27, 1), (1, 12), (1, 21), (2, 22), (4, 7), (1, 0), (6, 33), (7, 26), (1, 3), (2, 4), (6, 37), (2, 38), (7, 15), (5, 24)],
-    }
-    if opts.genome_name and opts.genome_name not in genomes:
-        raise Exception(f"Architecture {opts.genome_name} not found")
-        genome = genomes[opts.genome_name]
-    else:
-        genome = opts.genome
-        
+    if not opts.genome:
+        raise Exception("Please specify genome with --genome")
+    genome = opts.genome
     encoder = CGP_Net(opts, genome)
     logger.record(key="genomes", name = opts.genome_name, genome = genome)
     export_cgp_to_graphviz(encoder.genes, opts, os.path.join(opts.save_dir, f"candidate"), only_active=True)
@@ -296,23 +285,22 @@ def plot_best_genome(run_dir):
     raise ValueError(f"Candidate with id={best_id} not found in {candidates_path}")
 
 def run_evaluation(opts, logger):
-    if not opts.genome_name:
-        raise Exception("Please specify name of architecture with --genome_name")
-    genomes = {
-        "TRANS1" : [None, (1, 0), (1, 1), (1, 2), (1, 3), (1, 4), (1, 5), (1, 6), (1, 7), (1, 0), (1, 9), (1, 10), (1, 19), (1, 12), (1, 13), (1, 14), (1, 15), (4, 0), (5, (9, 17)), (2, 18), (3, 19, 1), (7, 20), (3, 21, -1), (5, (14, 22)), (2, 23), (1, 0), (1, 25), (1, 26), (1, 27), (1, 28), (1, 29), (1, 30), (1, 31), (1, 0), (1, 33), (1, 34), (1, 35), (1, 36), (1, 37), (1, 38), (1, 39), (5, 24)],
-        "EVO1" : [None, (7, 0), (2, 25), (4, 34), (3, 19, -1), (5, (4, 28)), (5, 21), (1, 22), (1, 31), (4, 0), (4, 9), (4, 2), (1, 19), (3, 28, -1), (1, 37), (7, 14), (6, 39), (5, 0), (5, (25, 33, 1)), (2, 18), (3, 19, 1), (2, 28), (7, 29), (1, 38), (5, 31), (5, 0), (4, 1), (4, 26), (1, 19), (6, 28), (5, 29), (2, 22), (2, 15), (4, 0), (5, 25), (3, 34, 0), (7, 35), (5, 28), (4, 21), (2, 14), (6, 39), (5, 32)],
-        "EVO2": [None, (1, 0), (6, 25), (3, 26, 0), (2, 35), (4, 28), (5, 21), (6, 38), (7, 15), (5, 0), (4, 25), (4, 18), (2, 19), (7, 12), (1, 37), (6, 14), (1, 15), (4, 0), (5, (9, 17)), (2, 18), (1, 19), (7, 20), (4, 21), (6, 38), (4, 7), (2, 0), (4, 1), (3, 26, 1), (3, 35, 1), (4, 4), (1, 21), (2, 30), (5, 31), (1, 0), (4, 25), (5, 26), (2, 3), (6, 28), (3, 13, 0), (5, 22), (1, 39), (5, 32)],
-        "EVO10": [None, (5, 0), (3, 1, 1), (7, 10), (4, 35), (3, 36, 1), (2, 37), (5, (22, 30, 14)), (6, 7), (2, 0), (7, 1), (7, 26), (7, 19), (3, 12, 1), (3, 37, 0), (6, 38), (3, 39, 1), (4, 0), (5, (9, 17)), (3, 18, 0), (4, 27), (7, 12), (7, 13), (7, 30), (2, 23), (2, 0), (1, 25), (6, 2), (3, 27, 1), (1, 12), (1, 21), (2, 22), (4, 7), (1, 0), (6, 33), (7, 26), (1, 3), (2, 4), (6, 37), (2, 38), (7, 15), (5, 24)],
-    }
-    if opts.genome_name not in genomes:
-        raise Exception(f"Architecture {opts.genome_name} not found")
-    
+    # if not opts.genome_name:
+    #     raise Exception("Please specify name of architecture with --genome_name")
+    # genomes = {
+    #     "TRANS1" : [None, (1, 0), (1, 1), (1, 2), (1, 3), (1, 4), (1, 5), (1, 6), (1, 7), (1, 0), (1, 9), (1, 10), (1, 19), (1, 12), (1, 13), (1, 14), (1, 15), (4, 0), (5, (9, 17)), (2, 18), (3, 19, 1), (7, 20), (3, 21, -1), (5, (14, 22)), (2, 23), (1, 0), (1, 25), (1, 26), (1, 27), (1, 28), (1, 29), (1, 30), (1, 31), (1, 0), (1, 33), (1, 34), (1, 35), (1, 36), (1, 37), (1, 38), (1, 39), (5, 24)],
+    #     "EVO1" : [None, (7, 0), (2, 25), (4, 34), (3, 19, -1), (5, (4, 28)), (5, 21), (1, 22), (1, 31), (4, 0), (4, 9), (4, 2), (1, 19), (3, 28, -1), (1, 37), (7, 14), (6, 39), (5, 0), (5, (25, 33, 1)), (2, 18), (3, 19, 1), (2, 28), (7, 29), (1, 38), (5, 31), (5, 0), (4, 1), (4, 26), (1, 19), (6, 28), (5, 29), (2, 22), (2, 15), (4, 0), (5, 25), (3, 34, 0), (7, 35), (5, 28), (4, 21), (2, 14), (6, 39), (5, 32)],
+    #     "EVO2": [None, (1, 0), (6, 25), (3, 26, 0), (2, 35), (4, 28), (5, 21), (6, 38), (7, 15), (5, 0), (4, 25), (4, 18), (2, 19), (7, 12), (1, 37), (6, 14), (1, 15), (4, 0), (5, (9, 17)), (2, 18), (1, 19), (7, 20), (4, 21), (6, 38), (4, 7), (2, 0), (4, 1), (3, 26, 1), (3, 35, 1), (4, 4), (1, 21), (2, 30), (5, 31), (1, 0), (4, 25), (5, 26), (2, 3), (6, 28), (3, 13, 0), (5, 22), (1, 39), (5, 32)],
+    #     "EVO10": [None, (5, 0), (3, 1, 1), (7, 10), (4, 35), (3, 36, 1), (2, 37), (5, (22, 30, 14)), (6, 7), (2, 0), (7, 1), (7, 26), (7, 19), (3, 12, 1), (3, 37, 0), (6, 38), (3, 39, 1), (4, 0), (5, (9, 17)), (3, 18, 0), (4, 27), (7, 12), (7, 13), (7, 30), (2, 23), (2, 0), (1, 25), (6, 2), (3, 27, 1), (1, 12), (1, 21), (2, 22), (4, 7), (1, 0), (6, 33), (7, 26), (1, 3), (2, 4), (6, 37), (2, 38), (7, 15), (5, 24)],
+    # }
+    # if opts.genome_name not in genomes:
+    #     raise Exception(f"Architecture {opts.genome_name} not found")
     if not opts.test_set_path:
             raise Exception("Please specify name of test set with --test_set_path")
     
-    encoder = CGP_Net(opts, (genomes[opts.genome_name]))
+    encoder = CGP_Net(opts, (opts.genome))
     model = AttentionModel(opts, encoder)
-    
+    export_cgp_to_graphviz(encoder.genes, opts, os.path.join(opts.save_dir, f"candidate"), only_active=True)
     checkpoint = torch.load(opts.checkpoint_path, map_location=opts.device, weights_only=False)
     model.load_state_dict(checkpoint["model"])
     
@@ -320,9 +308,9 @@ def run_evaluation(opts, logger):
     
     logger.record(key="scores", score=score)
     print(f"Final score {score}")
-    encoder.print_active_parameters()
+    # encoder.print_active_parameters()
 
-    print(f"Active encoder parameters: {encoder.count_active_parameters():,}")
+    # print(f"Active encoder parameters: {encoder.count_active_parameters():,}")
 
    
 
@@ -350,7 +338,7 @@ def percentage_reduction(original, new):
 
 if __name__ == "__main__":
     # transformer_params = 16.7780 
-    # evo_params = 16.8479
+    # evo_params =16.8359
     # reduction = percentage_reduction(transformer_params, evo_params)
     # print(f"Reduction: {reduction:.2f}%")
     # exit()
