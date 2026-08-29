@@ -14,7 +14,7 @@ from learning.attention_model import AttentionModel
 from learning.cgp import CGP_Net
 from learning.encoders.graph_encoder import GraphAttentionEncoder
 from learning.problem_vrp import CVRP
-from utils.training import evaluate, validate 
+from utils.training import evaluate, produce_transformer_genome, reset_seeds, validate, verify_sanity 
 from utils.logger import Logger
 
 def initial_setup(opts):
@@ -26,76 +26,7 @@ def initial_setup(opts):
         opts.genomes_active_out_dir = os.path.join(opts.save_dir, "genomes_active")
         os.makedirs(os.path.join(opts.save_dir,"parents"))
         opts.parents_out_dir = os.path.join(opts.save_dir, "parents")
-    reset_seeds(opts)
     
-def reset_seeds(opts):
-    random.seed(opts.seed)
-    torch.manual_seed(opts.seed)
-    np.random.seed(opts.seed)
-    
-def produce_transformer_genome(opts):
-    if opts.x_dim < 8:
-        raise Exception("For transformer to fit it genotype the x_dim must have at least 8 length")
-    to_global_idx = lambda x, y, opts: opts.x_dim * opts.y_dim + 1 if x == opts.x_dim else y * opts.x_dim + x + 1
-    length = opts.x_dim * opts.y_dim
-    genome = [None] * (length + 2)
-    for y in range(opts.y_dim):
-        genome[to_global_idx(0, y, opts)] = ((1, 0))
-        for x in range(1, opts.x_dim):
-            pos = to_global_idx(x, y, opts)
-            genome[pos] = ((1, to_global_idx(x - 1, y, opts)))
-    main_row = opts.y_dim // 2
-    genome[-1] = (5, (to_global_idx(opts.x_dim - 1, main_row, opts)))    
-    
-    prev_pos = 0
-    x = 0
-    while x <= opts.x_dim - 8:
-        pos = to_global_idx(x, main_row, opts)
-        genome[pos] = ((4, prev_pos))
-        genome[to_global_idx(x, main_row - 1, opts)] = ((1, prev_pos))
-        genome[pos + 1] = ((5, (to_global_idx(x, main_row - 1, opts), pos)))   
-        genome[pos + 2] = ((2, pos + 1)) 
-        genome[pos + 3] = ((3, pos + 2, 1))
-        genome[to_global_idx(x + 3, main_row - 1, opts)] = ((1, pos + 2))
-        genome[pos + 4] = ((7, pos + 3))
-        genome[pos + 5] = ((3, pos + 4, -1))
-        genome[pos + 6] = ((5, (to_global_idx(x + 5, main_row - 1, opts), pos + 5)))  
-        genome[pos + 7] = ((2, pos + 6))
-        prev_pos = pos + 7
-        x = x + 8
-    
-    return genome
-
-def verify_sanity(opts, logger: Logger):
-    orig_epochs = opts.n_epochs
-    orig_epoch_size = opts.epoch_size
-    orig_graph_size = opts.graph_size
-    orig_y_dim = opts.y_dim
-    orig_x_dim = opts.x_dim
-    orig_no_progress_bar = opts.no_progress_bar
-    
-    opts.n_epochs = 1
-    opts.epoch_size = 1
-    opts.graph_size = 10
-    opts.no_progress_bar = True
-    reset_seeds(opts)
-    score_original_encoder = evaluate(opts, logger, candidate_id=-2)
-    reset_seeds(opts)
-    opts.x_dim = 24
-    encoder = CGP_Net(opts, produce_transformer_genome(opts))
-    logger.record(key="candidates", id=0, genome=encoder.genome)
-    export_cgp_to_graphviz(encoder.genes, opts, os.path.join(opts.save_dir, f"TRANSFORMER"), only_active=False)
-    export_cgp_to_graphviz(encoder.genes, opts, os.path.join(opts.save_dir, f"TRANSFORMER_ACTIVE"), only_active=True)
-    score_cgp = evaluate(opts, logger, encoder, candidate_id=-1)
-    if score_original_encoder != score_cgp:
-        raise Exception("CARAMBA!")
-    print("ALL GOOD BOSS")
-    opts.n_epochs = orig_epochs
-    opts.epoch_size = orig_epoch_size
-    opts.graph_size = orig_graph_size
-    opts.y_dim = orig_y_dim
-    opts.x_dim = orig_x_dim
-    opts.no_progress_bar = orig_no_progress_bar
 
 def run_transformer_evolution(opts, logger):
     parent_encoder = CGP_Net(opts, produce_transformer_genome(opts))
@@ -337,24 +268,13 @@ def verify_sanity2(opts, logger: Logger):
     model = AttentionModel(opts).to(opts.device)
     score_original_encoder = evaluate(opts, logger)
    
-def percentage_reduction(original, new):
-    return (new - original) / original * 100
-
 if __name__ == "__main__":
-    # transformer_params = 16.7780 
-    # evo_params =16.8359
-    # reduction = percentage_reduction(transformer_params, evo_params)
-    # print(f"Reduction: {reduction:.2f}%")
-    # exit()
-    
-    
     opts = get_options()
     initial_setup(opts)
     logger = Logger(opts)
+    verify_sanity(opts, logger)
+    reset_seeds(opts)
     
-    #evaluate(opts, logger)
-    # verify_sanity(opts, logger)
-    # exit()
     if opts.mode == "cgp":    
         run_cgp(opts, logger)
     elif opts.mode == "random_search":

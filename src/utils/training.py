@@ -2,6 +2,7 @@ import csv
 from dataclasses import dataclass
 import os
 import time
+import numpy as np
 import torch
 import math
 from torch.nn import DataParallel
@@ -11,7 +12,10 @@ import random
 from tqdm import tqdm
 from torch.utils.data import DataLoader
 from learning.attention_model import AttentionModel
+from learning.cgp import CGP_Net
+from learning.encoders.graph_encoder import GraphAttentionEncoder
 from learning.reinforce_baselines import RolloutBaseline, WarmupBaseline, get_inner_model
+from utils.graph import export_cgp_to_graphviz
 from utils.logger import Logger
 from utils.misc import move_to
 from learning.problem_vrp import CVRP
@@ -21,6 +25,142 @@ class EvaluationResult:
     model: AttentionModel
     scores: list
     snapshots: list
+    
+def reset_seeds(opts):
+    random.seed(opts.seed)
+    torch.manual_seed(opts.seed)
+    np.random.seed(opts.seed)
+    
+def produce_transformer_genome(opts):
+    if opts.x_dim < 8:
+        raise Exception("For transformer to fit it genotype the x_dim must have at least 8 length")
+    to_global_idx = lambda x, y, opts: opts.x_dim * opts.y_dim + 1 if x == opts.x_dim else y * opts.x_dim + x + 1
+    length = opts.x_dim * opts.y_dim
+    genome = [None] * (length + 2)
+    for y in range(opts.y_dim):
+        genome[to_global_idx(0, y, opts)] = ((1, 0))
+        for x in range(1, opts.x_dim):
+            pos = to_global_idx(x, y, opts)
+            genome[pos] = ((1, to_global_idx(x - 1, y, opts)))
+    main_row = opts.y_dim // 2
+    genome[-1] = (5, (to_global_idx(opts.x_dim - 1, main_row, opts)))    
+    
+    prev_pos = 0
+    x = 0
+    while x <= opts.x_dim - 8:
+        pos = to_global_idx(x, main_row, opts)
+        genome[pos] = ((4, prev_pos))
+        genome[to_global_idx(x, main_row - 1, opts)] = ((1, prev_pos))
+        genome[pos + 1] = ((5, (to_global_idx(x, main_row - 1, opts), pos)))   
+        genome[pos + 2] = ((2, pos + 1)) 
+        genome[pos + 3] = ((3, pos + 2, 1))
+        genome[to_global_idx(x + 3, main_row - 1, opts)] = ((1, pos + 2))
+        genome[pos + 4] = ((7, pos + 3))
+        genome[pos + 5] = ((3, pos + 4, -1))
+        genome[pos + 6] = ((5, (to_global_idx(x + 5, main_row - 1, opts), pos + 5)))  
+        genome[pos + 7] = ((2, pos + 6))
+        prev_pos = pos + 7
+        x = x + 8
+    
+    return genome
+
+def verify_sanity(opts, logger: Logger):
+    orig_epochs = opts.n_epochs
+    orig_epoch_size = opts.epoch_size
+    orig_graph_size = opts.graph_size
+    orig_y_dim = opts.y_dim
+    orig_x_dim = opts.x_dim
+    orig_no_progress_bar = opts.no_progress_bar
+    orig_no_save_model = opts.no_save_model
+    opts.n_epochs = 1
+    opts.epoch_size = 1
+    opts.graph_size = 10
+    opts.x_dim = 8
+    opts.no_progress_bar = True
+    opts.no_save_model = True
+
+    validation_set = getattr(opts, "validation_set", None)
+    if not validation_set:
+        validation_set = CVRP.make_dataset(size=opts.graph_size, num_samples=opts.val_test_size)
+    
+    reset_seeds(opts)
+    original_encoder = GraphAttentionEncoder(
+        n_heads=opts.n_heads,
+        embed_dim=opts.embedding_dim,
+        n_layers=1,
+        normalization=opts.normalization
+    )
+    model_original = AttentionModel(opts, original_encoder)
+    baseline = RolloutBaseline(model_original, opts)
+    baseline = WarmupBaseline(baseline, opts.bl_warmup_epochs, warmup_exp_beta=opts.exp_beta)
+    optimizer = optim.Adam(
+        [{'params': model_original.parameters(), 'lr': opts.lr_model}]
+        + (
+            [{'params': baseline.get_learnable_parameters(), 'lr': opts.lr_critic}]
+            if len(baseline.get_learnable_parameters()) > 0
+            else []
+        )
+    )
+    lr_scheduler = optim.lr_scheduler.LambdaLR(optimizer, lambda epoch: opts.lr_decay ** epoch)
+    scores_orig = []
+    for i in range(3):
+        scores_orig.append(float(train_epoch(
+                        model_original,
+                        optimizer,
+                        baseline,
+                        lr_scheduler,
+                        i,
+                        validation_set,
+                        opts
+                    )))
+        logger.record(
+                    epoch=i,
+                    id=-2,
+                    score=scores_orig[-1],
+                    time=0)
+    
+    reset_seeds(opts)
+    encoder = CGP_Net(opts, produce_transformer_genome(opts))
+    model = AttentionModel(opts, encoder)
+    baseline = RolloutBaseline(model, opts)
+    baseline = WarmupBaseline(baseline, opts.bl_warmup_epochs, warmup_exp_beta=opts.exp_beta)
+    optimizer = optim.Adam(
+        [{'params': model.parameters(), 'lr': opts.lr_model}]
+        + (
+            [{'params': baseline.get_learnable_parameters(), 'lr': opts.lr_critic}]
+            if len(baseline.get_learnable_parameters()) > 0
+            else []
+        )
+    )
+    lr_scheduler = optim.lr_scheduler.LambdaLR(optimizer, lambda epoch: opts.lr_decay ** epoch)
+    scores_cgp = []
+    for i in range(3):
+        scores_cgp.append(float(train_epoch(
+                        model,
+                        optimizer,
+                        baseline,
+                        lr_scheduler,
+                        i,
+                        validation_set,
+                        opts
+                    )))
+        logger.record(
+                    epoch=i,
+                    id=-1,
+                    score=scores_cgp[-1],
+                    time=0
+                )
+
+    if scores_orig != scores_cgp:
+        raise Exception("CARAMBA!")
+    
+    opts.n_epochs = orig_epochs
+    opts.epoch_size = orig_epoch_size
+    opts.graph_size = orig_graph_size
+    opts.y_dim = orig_y_dim
+    opts.x_dim = orig_x_dim
+    opts.no_progress_bar = orig_no_progress_bar
+    opts.no_save_model = orig_no_save_model
 
 def evaluate(opts, logger: Logger, encoder = None, candidate_id = None) -> EvaluationResult:
     if not candidate_id:
@@ -159,18 +299,6 @@ def train_epoch(model, optimizer, baseline, lr_scheduler, epoch, val_dataset, op
     avg_reward = validate(model, val_dataset, opts)
     if not opts.no_progress_bar:
         print(f'epoch {epoch}, score {avg_reward}')
-    csv_path = os.path.join(opts.save_dir, "validation_scores.csv")
-    file_exists = os.path.exists(csv_path)
-    with open(csv_path, "a", newline="") as f:
-        writer = csv.writer(f)
-
-        if not file_exists:
-            writer.writerow(["epoch", "score"])
-
-        writer.writerow([
-            epoch,
-            float(avg_reward)
-        ])
     baseline.epoch_callback(model, epoch)
     # lr_scheduler should be called at end of epoch
     lr_scheduler.step()

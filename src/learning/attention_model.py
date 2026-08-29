@@ -63,7 +63,7 @@ class AttentionModel(nn.Module):
         self.init_embed = nn.Linear(node_dim, self.embedding_dim)
         self.normalization = 'batch'
         
-        if encoder:    
+        if encoder:
             self.embedder = encoder 
         else:
             self.embedder = GraphAttentionEncoder(
