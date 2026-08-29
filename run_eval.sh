@@ -7,6 +7,13 @@ python src/run.py \
     --x_dim 8 \
     --mode genome_evaluation \
     --genome_name "$GENOME_NAME" \
+    --graph_size 10
+
+python src/run.py \
+    --run_name "${GENOME_NAME}" \
+    --x_dim 8 \
+    --mode genome_evaluation \
+    --genome_name "$GENOME_NAME" \
     --graph_size 20
 
 python src/run.py \

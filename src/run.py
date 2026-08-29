@@ -72,18 +72,21 @@ def verify_sanity(opts, logger: Logger):
     orig_graph_size = opts.graph_size
     orig_y_dim = opts.y_dim
     orig_x_dim = opts.x_dim
+    orig_no_progress_bar = opts.no_progress_bar
+    
     opts.n_epochs = 1
     opts.epoch_size = 1
-    opts.graph_size = 10   
+    opts.graph_size = 10
+    opts.no_progress_bar = True
     reset_seeds(opts)
     score_original_encoder = evaluate(opts, logger, candidate_id=-2)
     reset_seeds(opts)
-    opts.x_dim = 8
-    transformer_genome = produce_transformer_genome(opts)
-    logger.record(key="candidates", id=0, genome=transformer_genome)
-    # export_cgp_to_graphviz(modelCGP.get_encoder().genes, opts, os.path.join(opts.save_dir, f"TRANSFORMER"), only_active=False)
-    # export_cgp_to_graphviz(modelCGP.get_encoder().genes, opts, os.path.join(opts.save_dir, f"TRANSFORMER_ACTIVE"), only_active=True)
-    score_cgp = evaluate(opts, logger, transformer_genome, candidate_id=-1)
+    opts.x_dim = 24
+    encoder = CGP_Net(opts, produce_transformer_genome(opts))
+    logger.record(key="candidates", id=0, genome=encoder.genome)
+    export_cgp_to_graphviz(encoder.genes, opts, os.path.join(opts.save_dir, f"TRANSFORMER"), only_active=False)
+    export_cgp_to_graphviz(encoder.genes, opts, os.path.join(opts.save_dir, f"TRANSFORMER_ACTIVE"), only_active=True)
+    score_cgp = evaluate(opts, logger, encoder, candidate_id=-1)
     if score_original_encoder != score_cgp:
         raise Exception("CARAMBA!")
     print("ALL GOOD BOSS")
@@ -92,6 +95,7 @@ def verify_sanity(opts, logger: Logger):
     opts.graph_size = orig_graph_size
     opts.y_dim = orig_y_dim
     opts.x_dim = orig_x_dim
+    opts.no_progress_bar = orig_no_progress_bar
 
 def run_transformer_evolution(opts, logger):
     parent_encoder = CGP_Net(opts, produce_transformer_genome(opts))
@@ -349,8 +353,8 @@ if __name__ == "__main__":
     logger = Logger(opts)
     
     #evaluate(opts, logger)
-    #verify_sanity(opts, logger)
-    
+    # verify_sanity(opts, logger)
+    # exit()
     if opts.mode == "cgp":    
         run_cgp(opts, logger)
     elif opts.mode == "random_search":
