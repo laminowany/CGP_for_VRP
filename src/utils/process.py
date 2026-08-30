@@ -1,13 +1,15 @@
 import argparse
 import ast
+from copyreg import pickle
 from enum import Enum
 import os
 from pathlib import Path
 import random
 import time
 import torch
+import pickle
 
-from learning.problem_vrp import VRPDataset
+from learning.problem_vrp import VRPDataset, make_instance
 
 class Mode(str, Enum):
     CGP = "cgp"
@@ -116,7 +118,12 @@ def get_options(args=None):
         opts.validation_set = VRPDataset(size=opts.graph_size, num_samples=opts.val_test_size, data=data)
         
     if opts.test_set_path is not None:
-        data = torch.load(opts.test_set_path)
+        if opts.test_set_path.endswith(".pkl"):
+            with open(opts.test_set_path, "rb") as f:
+                data = pickle.load(f)
+            data = [make_instance(instance) for instance in data]
+        else:
+            data = torch.load(opts.test_set_path)
         opts.test_set = VRPDataset(size=opts.graph_size, num_samples=opts.val_test_size, data=data)
         
     if opts.genome:
@@ -147,3 +154,14 @@ def get_options(args=None):
     assert (opts.bl_warmup_epochs == 0) or (opts.baseline == 'rollout')
     assert opts.epoch_size % opts.batch_size == 0, "Epoch size must be integer multiple of batch size!"
     return opts
+
+def initial_setup(opts):
+    os.makedirs(opts.save_dir)
+    if opts.mode == "cgp" or opts.mode == "random_search" or opts.mode == "evolve_transformer":    
+        os.makedirs(os.path.join(opts.save_dir,"genomes_full"))
+        opts.genomes_full_out_dir = os.path.join(opts.save_dir, "genomes_full")
+        os.makedirs(os.path.join(opts.save_dir,"genomes_active"))
+        opts.genomes_active_out_dir = os.path.join(opts.save_dir, "genomes_active")
+        os.makedirs(os.path.join(opts.save_dir,"parents"))
+        opts.parents_out_dir = os.path.join(opts.save_dir, "parents")
+    

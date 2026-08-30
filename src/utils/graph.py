@@ -26,58 +26,22 @@ def gene_color(gene_type):
     }
     return colors.get(gene_type, "white")
 
-# def export_cgp_to_graphviz(genes, opts, filename, only_active):
-#     rows = opts.y_dim
-#     columns = opts.x_dim
-#     dot = Digraph()
-#     dot.attr(
-#         rankdir="LR",
-#         splines="true",
-#         nodesep="0.4",
-#         ranksep="0.8"
-#     )
-#     dx = 2.0
-#     dy = -1.2
-#     for g in genes:
-#         if g is None:
-#             continue
-#         if only_active and not g.active:
-#             continue
-#         col = g.pos // rows
-#         row = g.pos % rows
-#         x = col * dx
-#         y = row * dy
-#         style = "filled" if g.active else "dashed"
 
-#         dot.node(
-#             str(g.pos),
-#             label=f"{g.pos}\n{gene_type_name(g.type)}",
-#             style=style,
-#             fillcolor=gene_color(g.type),
-#             pos=f"{x},{y}!",
-#             pin="true",
-#             width="1",
-#             height="1",
-#             fixedsize="true"
-#         )
-#     for g in genes:
-#         if g is None or (only_active and not g.active):
-#             continue
-
-#         for inp in g.inputs:
-#             dot.edge(str(inp), str(g.pos))
-
-#     dot.render(filename, format="png", cleanup=True)
-    
-def export_cgp_to_graphviz(genes, opts, filename, only_active):
+def export_cgp_to_graphviz(
+    genes,
+    opts,
+    filename,
+    only_active,
+    paper_style=False,
+):
     rows = opts.y_dim
     dot = Digraph()
 
     dot.attr(
         rankdir="LR",
         splines="true",
-        nodesep="0.8",   # więcej miejsca pionowo
-        ranksep="0.35",  # mniej miejsca poziomo
+        nodesep="0.8",
+        ranksep="0.35",
         dpi="300",
     )
 
@@ -93,15 +57,28 @@ def export_cgp_to_graphviz(genes, opts, filename, only_active):
         penwidth="1.5",
         arrowsize="0.5",
     )
+
     dx = 2.5
     dy = -1.8
 
-    for g in genes:
-        if g is None:
-            continue
-        if only_active and not g.active:
-            continue
+    visible_genes = [
+        g
+        for g in genes
+        if g is not None and (not only_active or g.active)
+    ]
 
+    if paper_style:
+        dot.node(
+            "0",
+            label="INPUT",
+            style="dashed",
+            fillcolor="white",
+            width="1.8",
+            height="1.8",
+            fixedsize="true",
+        )
+
+    for g in visible_genes:
         col = g.pos // rows
         row = g.pos % rows
 
@@ -109,7 +86,9 @@ def export_cgp_to_graphviz(genes, opts, filename, only_active):
         y = row * dy
 
         style = "filled" if g.active else "dashed"
+
         label = gene_type_name(g.type)
+
         if g.type == 3 and g.args:
             if g.args[0] == 1:
                 label += "\nUP"
@@ -117,9 +96,13 @@ def export_cgp_to_graphviz(genes, opts, filename, only_active):
                 label += "\nDOWN"
             else:
                 label += "\n-"
+
+        if not paper_style:
+            label = f"{g.pos}\n{label}"
+
         dot.node(
             str(g.pos),
-            label=f"{g.pos}\n{label}",
+            label=label,
             style=style,
             fillcolor=gene_color(g.type),
             pos=f"{x},{y}!",
@@ -129,11 +112,22 @@ def export_cgp_to_graphviz(genes, opts, filename, only_active):
             fixedsize="true",
         )
 
-    for g in genes:
-        if g is None or (only_active and not g.active):
-            continue
-
+    for g in visible_genes:
         for inp in g.inputs:
             dot.edge(str(inp), str(g.pos))
+    if paper_style and visible_genes:
+        last_gene = max(visible_genes, key=lambda g: g.pos)
+
+        dot.node(
+            "output",
+            label="OUTPUT",
+            style="dashed",
+            fillcolor="white",
+            width="1.8",
+            height="1.8",
+            fixedsize="true",
+        )
+
+        dot.edge(str(last_gene.pos), "output")
 
     dot.render(filename, format="png", cleanup=True)
