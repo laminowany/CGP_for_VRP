@@ -178,50 +178,18 @@ def run_generate_validation_data(opts):
     validation_set = CVRP.make_dataset(size=opts.graph_size, num_samples=opts.val_test_size)
     torch.save(validation_set.data, os.path.join(opts.save_dir, f'dataset_{opts.graph_size}CVRP_seed_{opts.seed}.pt'))
     
-def plot_best_genome(run_dir):
-    run_dir = Path(run_dir)
-
-    budget_path = run_dir / "budget.csv"
-    candidates_path = run_dir / "candidates.csv"
-
-    # Get best_id from the last row of budget.csv
-    with budget_path.open(newline="") as f:
-        rows = list(csv.DictReader(f))
-
-    if not rows:
-        raise ValueError(f"{budget_path} is empty")
-
-    best_id = int(rows[-1]["best_id"])
-
-    # Find corresponding genome in candidate.csv
-    with candidates_path.open(newline="") as f:
-        reader = csv.DictReader(f)
-
-        for row in reader:
-            if int(row["id"]) == best_id:
-                genome = ast.literal_eval(row["genome"])
-                net = CGP_Net(opts, genome)
-                print(f'saving to {os.path.join(run_dir, f"cgp10")}')
-                export_cgp_to_graphviz(net.genes, opts, os.path.join(run_dir, f"cgp10"), only_active=True)
-                return best_id, genome
-    print( os.path.join(run_dir, f"parent"))
-  
-    raise ValueError(f"Candidate with id={best_id} not found in {candidates_path}")
-
     
-def run_evaluation(opts, logger):
+def run_scoring(opts, logger):
     if not opts.test_set_path:
             raise Exception("Please specify name of test set with --test_set_path")
     
+    logger.record(key="genomes", genome = opts.genome)
     encoder = CGP_Net(opts, (opts.genome))
     model = AttentionModel(opts, encoder)
     export_cgp_to_graphviz(encoder.genes, opts, os.path.join(opts.save_dir, f"candidate"), only_active=True, paper_style=True)
     checkpoint = torch.load(opts.checkpoint_path, map_location=opts.device, weights_only=False)
     model.load_state_dict(checkpoint["model"])
-    
-
     score = validate(model, opts.test_set, opts)
-    
     logger.record(key="scores", score=score)
     print(f"Final score {score}")
     # encoder.print_active_parameters()
@@ -233,7 +201,7 @@ if __name__ == "__main__":
     opts = get_options()
     initial_setup(opts)
     logger = Logger(opts)
-   # verify_sanity(opts, logger)
+    #verify_sanity(opts, logger)
     reset_seeds(opts)
     
     if opts.mode == "cgp":    
@@ -248,5 +216,5 @@ if __name__ == "__main__":
         run_generate_validation_data(opts)
     elif opts.mode == "genome_evaluation":
         run_genome_evaluation(opts, logger)
-    elif opts.mode == "evaluate":
-        run_evaluation(opts, logger)
+    elif opts.mode == "scoring":
+        run_scoring(opts, logger)

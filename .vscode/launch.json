@@ -1,0 +1,21 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        
+        {
+            "name": "run.py",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "/home/piotr/repos/magisterka/src/run.py",
+            "args": [
+                "--mode", "evolve_transformer",
+                "--genome_path", "/home/piotr/repos/magisterka/outputs/server1/outputs/run_20260624T081834",
+                "--id", "15"
+            ],
+            "console": "integratedTerminal"
+        }
+    ]
+}

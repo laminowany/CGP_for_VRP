@@ -18,7 +18,7 @@ class Mode(str, Enum):
     EVOLVE_TRANSFORMER = "evolve_transformer"
     GENERATE_VALIDATION_DATA = "generate_validation_data"
     GENOME_EVALUATION = "genome_evaluation" 
-    EVALUATE = "evaluate"
+    SCORING = "scoring"
 
 def get_options(args=None):
     parser = argparse.ArgumentParser(

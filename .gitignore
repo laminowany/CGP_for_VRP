@@ -2,3 +2,5 @@ outputs/*
 logs/*
 venv/*
 __pycache__/
+helpers/*
+output/*
